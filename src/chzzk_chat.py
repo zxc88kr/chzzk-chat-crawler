@@ -57,6 +57,8 @@ def formatTimestamp(ms, fps=60):
     return f"{hours:02}:{minutes:02}:{seconds:02}:{frames:02}"
 
 def formatChat(chat):
+    if chat.get('messageTypeCode') != 1:
+        return None
     if not chat.get('profile'):
         return None
     profile = json.loads(chat['profile'])   

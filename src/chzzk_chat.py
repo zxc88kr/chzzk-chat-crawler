@@ -67,14 +67,14 @@ def main():
         filtered_chats = [chat for chat in filtered_chats if any(msg in chat['content'] for msg in FILTER_MESSAGE)] if len(FILTER_MESSAGE) > 0 else filtered_chats
 
         print(f"필터링된 채팅 수: {len(filtered_chats)}")
-        with open(f"filtered_chats_{videoId}.txt", "w", encoding="utf-8") as f:
+        with open(f"filtered_chats_{videoId}.md", "w", encoding="utf-8") as f:
             # 저장 형식: {profile.nickname} ({profile.userIdHash}) - {content}
             for chat in filtered_chats:
                 profile = json.loads(chat['profile'])
                 content = f"{profile['nickname']} ({chat['userIdHash']}) - {chat['content']}"
                 f.write(content + "\n")
                 print(content)
-        print(f"필터링된 채팅이 'filtered_chats_{videoId}.txt' 파일로 저장되었습니다.")
+        print(f"필터링된 채팅이 'filtered_chats_{videoId}.md' 파일로 저장되었습니다.")
     
 if __name__ == "__main__":
     main()

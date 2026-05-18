@@ -60,7 +60,7 @@ def main():
     if chats is None:
         print("채팅 데이터를 가져오는 데 실패했습니다.")
     else:
-        path = f"./log/{videoId}"
+        path = f"./logs/{videoId}"
         if not os.path.exists(path):
             os.mkdir(path)
 

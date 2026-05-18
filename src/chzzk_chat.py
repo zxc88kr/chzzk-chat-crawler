@@ -39,16 +39,17 @@ def fetchChats(videoId: int):
         if chatData['code'] != 200:
             print(f"영상 '{videoId}'에 대한 채팅 데이터를 불러오지 못했습니다 (player message time: {playerMessageTime}): {chatData['message']}")
             break
-        content = chatData['content']
 
+        content = chatData['content']
         chats.extend(content['videoChats'])
-        if content['nextPlayerMessageTime'] is None:
-            print(f"영상 '{videoId}'에 대한 모든 채팅을 가져왔습니다.")
-            break
         
-        playerMessageTime = content['nextPlayerMessageTime']
         _pbar.update(len(content['videoChats']))
-        _pbar.set_postfix({"last_message_time": playerMessageTime})
+        _pbar.set_postfix({"last_message_time": f"{int(playerMessageTime)}"})
+
+        if content['nextPlayerMessageTime'] is None:
+            _pbar.write(f"영상 '{videoId}'에 대한 모든 채팅을 가져왔습니다.")
+            break
+        playerMessageTime = content['nextPlayerMessageTime']
     _pbar.close()
     return chats, live_open_date
 

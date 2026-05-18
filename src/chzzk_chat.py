@@ -60,7 +60,14 @@ def main():
     if chats is None:
         print("채팅 데이터를 가져오는 데 실패했습니다.")
     else:
-        print(f"영상 '{videoId}'에 대한 채팅을 가져왔습니다: {len(chats)}")
+        print(f"채팅 수: {len(chats)}")
+        with open(f"./chats/{videoId}.md", "w", encoding="utf-8") as f:
+            # 저장 형식: {profile.nickname} ({profile.userIdHash}) - {content}
+            for chat in chats:
+                profile = json.loads(chat['profile'])
+                content = f"{profile['nickname']} ({chat['userIdHash']}) - {chat['content']}"
+                f.write(content + "\n")
+                print(content)
 
         # 필터링
         filtered_chats = [chat for chat in chats if chat['userIdHash'] in FILTER_USERS] if len(FILTER_USERS) > 0 else chats

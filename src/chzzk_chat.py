@@ -11,7 +11,7 @@ FILTER_MESSAGE = [
     "?"
 ]
 # 누구의 채팅을 가져올지 입력. (UID)
-FILTER_USERS = "34908dd0d6c0d1495ace4f281b515094"
+FILTER_USER = "34908dd0d6c0d1495ace4f281b515094"
 
 import datetime, json, os, requests, tqdm
 
@@ -20,7 +20,7 @@ session.headers.update({
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 })
 
-def crawlChats(videoId: int):
+def fetchChats(videoId: int):
     videoData = session.get(f"https://api.chzzk.naver.com/service/v2/videos/{videoId}").json()
     if videoData['code'] != 200:
         print(f"영상 '{videoId}' 에 대한 데이터를 불러오지 못했습니다: {videoData['message']}")
@@ -49,6 +49,27 @@ def crawlChats(videoId: int):
         _pbar.set_postfix({"last_message_time": playerMessageTime})
     return chats, live_open_date
 
+def formatTimestamp(ms, fps=60):
+    hours = ms // 3600000
+    minutes = ms // 60000 % 60
+    seconds = ms // 1000 % 60
+    frames = (ms % 1000) * fps // 1000
+    return f"{hours:02}:{minutes:02}:{seconds:02}:{frames:02}"
+
+def formatChat(chat):
+    if not chat.get('profile'):
+        return None
+    profile = json.loads(chat['profile'])   
+    timestamp = formatTimestamp(chat['playerMessageTime'])
+    return f"[{timestamp}] {profile['nickname']} ({chat['userIdHash']}) - {chat['content']}"
+
+def saveChats(path, chats):
+    with open(path, "w", encoding="utf-8") as f:
+        for chat in chats:
+            content = formatChat(chat)
+            if content:
+                f.write(content + "\n")
+
 def main():
     videoId = input("영상 ID 또는 URL을 입력하세요: ").strip()
     # 사용자가 'https://chzzk.naver.com/video/13246889' 처럼 넣는 경우를 대비하여 파싱
@@ -58,7 +79,7 @@ def main():
         print("유효한 영상 ID 또는 URL을 입력하세요.")
         return
 
-    chats, live_open_date = crawlChats(videoId)
+    chats, live_open_date = fetchChats(videoId)
     if chats is None:
         print("채팅 데이터를 가져오는 데 실패했습니다.")
     else:
@@ -67,38 +88,19 @@ def main():
             os.mkdir(path)
 
         print(f"채팅 수: {len(chats)}")
-        with open(f"{path}/all_chats.md", "w", encoding="utf-8") as f:
-            # 저장 형식: [{timestamp}] {profile.nickname} ({profile.userIdHash}) - {content}
-            for chat in chats:
-                if chat['profile']:
-                    profile = json.loads(chat['profile'])
-                    timestamp = datetime.datetime.fromtimestamp(chat['messageTime'] / 1000).strftime("%Y-%m-%d %H:%M:%S")
-                    content = f"[{timestamp}] {profile['nickname']} ({chat['userIdHash']}) - {chat['content']}"
-                    f.write(content + "\n")
+        saveChats(f"{path}/all_chats.md", chats)
 
         # 필터링
         filtered_chats = [chat for chat in chats if any(msg in chat['content'] for msg in FILTER_MESSAGE)] if FILTER_MESSAGE else chats
 
         print(f"필터링된 채팅 수: {len(filtered_chats)}")
-        with open(f"{path}/filtered_chats.md", "w", encoding="utf-8") as f:
-            # 저장 형식: [{timestamp}] {profile.nickname} ({profile.userIdHash}) - {content}
-            for chat in filtered_chats:
-                profile = json.loads(chat['profile'])
-                timestamp = datetime.datetime.fromtimestamp(chat['messageTime'] / 1000).strftime("%Y-%m-%d %H:%M:%S")
-                content = f"[{timestamp}] {profile['nickname']} ({chat['userIdHash']}) - {chat['content']}"
-                f.write(content + "\n")
+        saveChats(f"{path}/filtered_chats.md", filtered_chats)
 
-        if FILTER_USERS:
-            filtered_chats = [chat for chat in chats if chat['userIdHash'] == FILTER_USERS]
-
+        if FILTER_USER:
+            filtered_chats = [chat for chat in filtered_chats if chat['userIdHash'] == FILTER_USER]
+            
             print(f"필터링된 특정 유저의 채팅 수: {len(filtered_chats)}")
-            with open(f"{path}/filtered_chats_{filtered_chats[0]['userIdHash']}.md", "w", encoding="utf-8") as f:
-                # 저장 형식: [{timestamp}] {profile.nickname} ({profile.userIdHash}) - {content}
-                for chat in filtered_chats:
-                    profile = json.loads(chat['profile'])
-                    timestamp = datetime.datetime.fromtimestamp(chat['messageTime'] / 1000).strftime("%Y-%m-%d %H:%M:%S")
-                    content = f"[{timestamp}] {profile['nickname']} ({chat['userIdHash']}) - {chat['content']}"
-                    f.write(content + "\n")
+            saveChats(f"{path}/filtered_chats_{FILTER_USER}.md", filtered_chats)
     
 if __name__ == "__main__":
     main()

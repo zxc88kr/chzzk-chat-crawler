@@ -67,7 +67,6 @@ def main():
                 profile = json.loads(chat['profile'])
                 content = f"{profile['nickname']} ({chat['userIdHash']}) - {chat['content']}"
                 f.write(content + "\n")
-                print(content)
 
         # 필터링
         filtered_chats = [chat for chat in chats if chat['userIdHash'] in FILTER_USERS] if len(FILTER_USERS) > 0 else chats
@@ -80,7 +79,6 @@ def main():
                 profile = json.loads(chat['profile'])
                 content = f"{profile['nickname']} ({chat['userIdHash']}) - {chat['content']}"
                 f.write(content + "\n")
-                print(content)
         print(f"필터링된 채팅이 '{videoId}.md' 파일로 저장되었습니다.")
     
 if __name__ == "__main__":

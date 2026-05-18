@@ -1,9 +1,5 @@
 # Copyright (c) 2026-present 마지막남은뚜또. All rights reserved.
 
-# 누구의 채팅을 가져올지 입력. (UID)
-FILTER_USERS = [
-    "34908dd0d6c0d1495ace4f281b515094"
-]
 # 어떤 채팅을 가져올지 입력. (조금이라도 들어있으면 가져옴, 예: "ㅋㅋㅋ" 등)
 FILTER_MESSAGE = [
     "ㄱ",
@@ -14,6 +10,8 @@ FILTER_MESSAGE = [
     "ㅎ",
     "?"
 ]
+# 누구의 채팅을 가져올지 입력. (UID)
+FILTER_USERS = "34908dd0d6c0d1495ace4f281b515094"
 
 import datetime, json, os, requests, tqdm
 
@@ -62,9 +60,13 @@ def main():
     if chats is None:
         print("채팅 데이터를 가져오는 데 실패했습니다.")
     else:
+        path = f"./log/{videoId}"
+        if not os.path.exists(path):
+            os.mkdir(path)
+
         print(f"채팅 수: {len(chats)}")
-        with open(f"./chats/{videoId}.md", "w", encoding="utf-8") as f:
-            # 저장 형식: {profile.nickname} ({profile.userIdHash}) - {content}
+        with open(f"{path}/all_chats.md", "w", encoding="utf-8") as f:
+            # 저장 형식: [{timestamp}] {profile.nickname} ({profile.userIdHash}) - {content}
             for chat in chats:
                 profile = json.loads(chat['profile'])
                 timestamp = datetime.datetime.fromtimestamp(chat['messageTime'] / 1000).strftime("%Y-%m-%d %H:%M:%S")
@@ -72,22 +74,28 @@ def main():
                 f.write(content + "\n")
 
         # 필터링
-        filtered_chats = [chat for chat in chats if chat['userIdHash'] in FILTER_USERS] if FILTER_USERS else chats
-        filtered_chats = [chat for chat in filtered_chats if any(msg in chat['content'] for msg in FILTER_MESSAGE)] if FILTER_MESSAGE else filtered_chats
-
-        path = "./filtered_chats/" + FILTER_USERS[0] if FILTER_USERS else "./filtered_chats/"
-        if not os.path.exists(path):
-            os.mkdir(path)
+        filtered_chats = [chat for chat in chats if any(msg in chat['content'] for msg in FILTER_MESSAGE)] if FILTER_MESSAGE else chats
 
         print(f"필터링된 채팅 수: {len(filtered_chats)}")
-        with open(f"{path}/{videoId}.md", "w", encoding="utf-8") as f:
-            # 저장 형식: {profile.nickname} ({profile.userIdHash}) - {content}
+        with open(f"{path}/filtered_chats.md", "w", encoding="utf-8") as f:
+            # 저장 형식: [{timestamp}] {profile.nickname} ({profile.userIdHash}) - {content}
             for chat in filtered_chats:
                 profile = json.loads(chat['profile'])
                 timestamp = datetime.datetime.fromtimestamp(chat['messageTime'] / 1000).strftime("%Y-%m-%d %H:%M:%S")
                 content = f"[{timestamp}] {profile['nickname']} ({chat['userIdHash']}) - {chat['content']}"
                 f.write(content + "\n")
-        print(f"필터링된 채팅이 '{videoId}.md' 파일로 저장되었습니다.")
+
+        if FILTER_USERS:
+            filtered_chats = [chat for chat in chats if chat['userIdHash'] == FILTER_USERS]
+
+            print(f"필터링된 특정 유저의 채팅 수: {len(filtered_chats)}")
+            with open(f"{path}/filtered_chats_{filtered_chats[0]['userIdHash']}.md", "w", encoding="utf-8") as f:
+                # 저장 형식: [{timestamp}] {profile.nickname} ({profile.userIdHash}) - {content}
+                for chat in filtered_chats:
+                    profile = json.loads(chat['profile'])
+                    timestamp = datetime.datetime.fromtimestamp(chat['messageTime'] / 1000).strftime("%Y-%m-%d %H:%M:%S")
+                    content = f"[{timestamp}] {profile['nickname']} ({chat['userIdHash']}) - {chat['content']}"
+                    f.write(content + "\n")
     
 if __name__ == "__main__":
     main()

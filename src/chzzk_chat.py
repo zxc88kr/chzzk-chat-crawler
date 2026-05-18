@@ -6,14 +6,16 @@ FILTER_USERS = [
 ]
 # 어떤 채팅을 가져올지 입력. (조금이라도 들어있으면 가져옴, 예: "ㅋㅋㅋ" 등)
 FILTER_MESSAGE = [
+    "ㄱ",
+    "ㄷ",
+    "ㅇ",
+    "ㅉ",
     "ㅋ",
     "ㅎ",
     "?"
 ]
 
-# -------------------------------------------------------------------------------------
-
-import requests, tqdm, json
+import os, requests, tqdm, json
 
 session = requests.Session()
 session.headers.update({
@@ -69,11 +71,15 @@ def main():
                 f.write(content + "\n")
 
         # 필터링
-        filtered_chats = [chat for chat in chats if chat['userIdHash'] in FILTER_USERS] if len(FILTER_USERS) > 0 else chats
-        filtered_chats = [chat for chat in filtered_chats if any(msg in chat['content'] for msg in FILTER_MESSAGE)] if len(FILTER_MESSAGE) > 0 else filtered_chats
+        filtered_chats = [chat for chat in chats if chat['userIdHash'] in FILTER_USERS] if FILTER_USERS else chats
+        filtered_chats = [chat for chat in filtered_chats if any(msg in chat['content'] for msg in FILTER_MESSAGE)] if FILTER_MESSAGE else filtered_chats
+
+        path = "./filtered_chats/" + FILTER_USERS[0] if FILTER_USERS else "./filtered_chats/"
+        if not os.path.exists(path):
+            os.mkdir(path)
 
         print(f"필터링된 채팅 수: {len(filtered_chats)}")
-        with open(f"./filtered_chats/{videoId}.md", "w", encoding="utf-8") as f:
+        with open(f"{path}/{videoId}.md", "w", encoding="utf-8") as f:
             # 저장 형식: {profile.nickname} ({profile.userIdHash}) - {content}
             for chat in filtered_chats:
                 profile = json.loads(chat['profile'])

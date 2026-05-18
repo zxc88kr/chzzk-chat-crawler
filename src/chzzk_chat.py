@@ -20,11 +20,16 @@ session.headers.update({
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 })
 
+live_open_date = ""
+
 def crawlChats(videoId: int):
     videoData = session.get(f"https://api.chzzk.naver.com/service/v2/videos/{videoId}").json()
     if videoData['code'] != 200:
         print(f"영상 '{videoId}' 에 대한 데이터를 불러오지 못했습니다: {videoData['message']}")
         return None
+    
+    global live_open_date
+    live_open_date = datetime.datetime.strptime(videoData['content']['liveOpenDate'], "%Y.%m.%d")
     
     chats = []
     playerMessageTime = 0
@@ -60,7 +65,7 @@ def main():
     if chats is None:
         print("채팅 데이터를 가져오는 데 실패했습니다.")
     else:
-        path = f"./logs/{videoId}"
+        path = f"./logs/{live_open_date}"
         if not os.path.exists(path):
             os.mkdir(path)
 

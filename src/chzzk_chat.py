@@ -68,10 +68,11 @@ def main():
         with open(f"{path}/all_chats.md", "w", encoding="utf-8") as f:
             # 저장 형식: [{timestamp}] {profile.nickname} ({profile.userIdHash}) - {content}
             for chat in chats:
-                profile = json.loads(chat['profile'])
-                timestamp = datetime.datetime.fromtimestamp(chat['messageTime'] / 1000).strftime("%Y-%m-%d %H:%M:%S")
-                content = f"[{timestamp}] {profile['nickname']} ({chat['userIdHash']}) - {chat['content']}"
-                f.write(content + "\n")
+                if chat['profile']:
+                    profile = json.loads(chat['profile'])
+                    timestamp = datetime.datetime.fromtimestamp(chat['messageTime'] / 1000).strftime("%Y-%m-%d %H:%M:%S")
+                    content = f"[{timestamp}] {profile['nickname']} ({chat['userIdHash']}) - {chat['content']}"
+                    f.write(content + "\n")
 
         # 필터링
         filtered_chats = [chat for chat in chats if any(msg in chat['content'] for msg in FILTER_MESSAGE)] if FILTER_MESSAGE else chats

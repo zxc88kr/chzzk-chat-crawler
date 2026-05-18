@@ -76,7 +76,7 @@ def saveChats(path, chats):
 
 def main():
     videoId = input("영상 ID 또는 URL을 입력하세요: ").strip()
-    # 사용자가 'https://chzzk.naver.com/video/13246889' 처럼 넣는 경우를 대비하여 파싱
+    # 사용자가 'https://chzzk.naver.com/video/9330920' 처럼 넣는 경우를 대비하여 파싱
     try:
         videoId = int(videoId) if isinstance(videoId, int) else int(videoId.split('/')[-1])
     except ValueError:

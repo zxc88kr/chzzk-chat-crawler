@@ -1,6 +1,6 @@
 # Copyright (c) 2026-present 마지막남은뚜또. All rights reserved.
 
-# 어떤 채팅을 가져올지 입력. (조금이라도 들어있으면 가져옴, 예: "ㅋㅋㅋ" 등)
+# 채팅 내용 필터 (포함 조건: 해당 문자열이 하나라도 포함되면 유지)
 FILTER_MESSAGE = [
     "ㄱ",
     "ㄷ",
@@ -10,10 +10,12 @@ FILTER_MESSAGE = [
     "ㅎ",
     "?"
 ]
-# 누구의 채팅을 가져올지 입력. (UID)
+# 특정 유저만 필터링 (UID)
 FILTER_USER = "34908dd0d6c0d1495ace4f281b515094"
+# 제외할 봇 유저 (UID)
+BOT_USER = "bb88ee67c4551e08e953f291d41f1a85"
 
-import datetime, json, os, requests, tqdm
+import json, os, requests, tqdm
 
 session = requests.Session()
 session.headers.update({
@@ -57,9 +59,9 @@ def formatTimestamp(ms, fps=60):
     return f"{hours:02}:{minutes:02}:{seconds:02}:{frames:02}"
 
 def formatChat(chat):
-    if chat.get('messageTypeCode') != 1:
-        return None
     if not chat.get('profile'):
+        return None
+    if chat.get('userIdHash') == BOT_USER:
         return None
     profile = json.loads(chat['profile'])   
     timestamp = formatTimestamp(chat['playerMessageTime'])

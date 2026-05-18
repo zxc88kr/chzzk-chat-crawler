@@ -15,7 +15,7 @@ FILTER_MESSAGE = [
     "?"
 ]
 
-import os, requests, tqdm, json
+import datetime, json, os, requests, tqdm
 
 session = requests.Session()
 session.headers.update({
@@ -67,7 +67,8 @@ def main():
             # 저장 형식: {profile.nickname} ({profile.userIdHash}) - {content}
             for chat in chats:
                 profile = json.loads(chat['profile'])
-                content = f"{profile['nickname']} ({chat['userIdHash']}) - {chat['content']}"
+                timestamp = datetime.fromtimestamp(chat['messageTime'] / 1000).strftime("%Y-%m-%d %H:%M:%S")
+                content = f"[{timestamp}] {profile['nickname']} ({chat['userIdHash']}) - {chat['content']}"
                 f.write(content + "\n")
 
         # 필터링
@@ -83,7 +84,8 @@ def main():
             # 저장 형식: {profile.nickname} ({profile.userIdHash}) - {content}
             for chat in filtered_chats:
                 profile = json.loads(chat['profile'])
-                content = f"{profile['nickname']} ({chat['userIdHash']}) - {chat['content']}"
+                timestamp = datetime.fromtimestamp(chat['messageTime'] / 1000).strftime("%Y-%m-%d %H:%M:%S")
+                content = f"[{timestamp}] {profile['nickname']} ({chat['userIdHash']}) - {chat['content']}"
                 f.write(content + "\n")
         print(f"필터링된 채팅이 '{videoId}.md' 파일로 저장되었습니다.")
     

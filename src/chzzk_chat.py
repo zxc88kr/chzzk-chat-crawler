@@ -29,7 +29,7 @@ def crawlChats(videoId: int):
         return None
     
     global live_open_date
-    live_open_date = datetime.datetime.strptime(videoData['content']['liveOpenDate'], "%Y.%m.%d")
+    live_open_date = videoData['content']['liveOpenDate'].split()[0].replace("-", ".")
     
     chats = []
     playerMessageTime = 0

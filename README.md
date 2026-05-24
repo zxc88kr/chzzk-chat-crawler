@@ -8,7 +8,6 @@
 1. 프로젝트 클론
 ```
 git clone https://github.com/zxc88kr/chzzk-chat-crawler.git
-cd src
 ```
 2. 패키지 설치
 ```

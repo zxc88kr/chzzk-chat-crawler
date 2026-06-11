@@ -1,5 +1,7 @@
 # Chzzk Chat Crawler
 
+<img src="assets/chzzk_logo.png" width="200">
+
 파이썬을 통해 네이버 치지직 서비스의 채팅을 크롤링 해봅시다.
 
 이 코드는 [마지막남은뚜또](https://github.com/LastDice)님의 코드를 기반으로 작성하였습니다.

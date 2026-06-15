@@ -97,7 +97,7 @@ def main():
             os.mkdir(path)
 
         print(f"채팅 수: {len(chats)}")
-        saveChats(f"{path}/all_chats.md", chats)
+        saveChats(f"{path}/all_chats.md", chats, None)
 
         # 필터링
         filtered_chats = [chat for chat in chats if any(msg in chat['content'] for msg in FILTER_MESSAGE)] if FILTER_MESSAGE else chats

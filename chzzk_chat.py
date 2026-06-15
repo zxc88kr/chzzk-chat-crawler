@@ -60,19 +60,22 @@ def formatTimestamp(ms, fps=60):
     frames = (ms % 1000) * fps // 1000
     return f"{hours:02}:{minutes:02}:{seconds:02}:{frames:02}"
 
-def formatChat(chat):
+def formatChat(chat, filter_user):
     if not chat.get('profile'):
         return None
     if chat.get('userIdHash') == BOT_USER:
         return None
     profile = json.loads(chat['profile'])   
     timestamp = formatTimestamp(chat['playerMessageTime'])
-    return f"[{timestamp}] {profile['nickname']} ({chat['userIdHash']}) - {chat['content']}"
+    nickname = profile['nickname']
+    if chat['userIdHash'] == filter_user:
+        nickname = f"<u>{nickname}</u>"
+    return f"[{timestamp}] {nickname} ({chat['userIdHash']}) - {chat['content']}"
 
-def saveChats(path, chats):
+def saveChats(path, chats, filter_user):
     with open(path, "w", encoding="utf-8") as f:
         for chat in chats:
-            content = formatChat(chat)
+            content = formatChat(chat, filter_user)
             if content:
                 f.write(content + "\n")
 
@@ -99,12 +102,7 @@ def main():
         # 필터링
         filtered_chats = [chat for chat in chats if any(msg in chat['content'] for msg in FILTER_MESSAGE)] if FILTER_MESSAGE else chats
         print(f"필터링된 채팅 수: {len(filtered_chats)}")
-        saveChats(f"{path}/filtered_chats.md", filtered_chats)
-
-        if FILTER_USER:
-            filtered_chats = [chat for chat in filtered_chats if chat['userIdHash'] == FILTER_USER]
-            print(f"필터링된 특정 유저의 채팅 수: {len(filtered_chats)}")
-            saveChats(f"{path}/filtered_chats_{FILTER_USER}.md", filtered_chats)
+        saveChats(f"{path}/filtered_chats.md", filtered_chats, FILTER_USER)
     
 if __name__ == "__main__":
     main()

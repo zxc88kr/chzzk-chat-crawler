@@ -2,3 +2,5 @@ logs/*
 !logs/.gitkeep
 venv/
 .DS_Store
+config.json
+__pycache__/

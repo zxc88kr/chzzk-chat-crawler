@@ -79,11 +79,28 @@ def saveChats(path, chats, filter_user):
             if content:
                 f.write(content + "\n")
 
+def getObsidianVaultPath():
+    config_path = os.path.join(os.path.dirname(__file__), "config.json")
+    if os.path.exists(config_path):
+        with open(config_path, encoding="utf-8") as f:
+            vault_path = json.load(f).get("obsidian_vault_path")
+        if vault_path:
+            return os.path.expanduser(vault_path)
+
+    default_path = os.path.expanduser("~/Documents/Obsidian Vault")
+    return default_path if os.path.isdir(default_path) else None
+
+def saveToDestinations(dirs, chats, filtered_chats):
+    for d in dirs:
+        os.makedirs(d, exist_ok=True)
+        saveChats(os.path.join(d, "all_chats.md"), chats, None)
+        saveChats(os.path.join(d, "filtered_chats.md"), filtered_chats, FILTER_USER)
+
 def main():
     videoId = input("영상 ID 또는 URL을 입력하세요: ").strip()
     # 사용자가 'https://chzzk.naver.com/video/9330920' 처럼 넣는 경우를 대비하여 파싱
     try:
-        videoId = int(videoId) if isinstance(videoId, int) else int(videoId.split('/')[-1])
+        videoId = int(videoId.split('/')[-1])
     except ValueError:
         print("유효한 영상 ID 또는 URL을 입력하세요.")
         return
@@ -91,18 +108,19 @@ def main():
     chats, live_open_date = fetchChats(videoId)
     if chats is None:
         print("채팅 데이터를 가져오는 데 실패했습니다.")
-    else:
-        path = f"./logs/{live_open_date}"
-        if not os.path.exists(path):
-            os.mkdir(path)
+        return
 
-        print(f"채팅 수: {len(chats)}")
-        saveChats(f"{path}/all_chats.md", chats, None)
+    print(f"채팅 수: {len(chats)}")
+    filtered_chats = [chat for chat in chats if any(msg in chat['content'] for msg in FILTER_MESSAGE)] if FILTER_MESSAGE else chats
+    print(f"필터링된 채팅 수: {len(filtered_chats)}")
 
-        # 필터링
-        filtered_chats = [chat for chat in chats if any(msg in chat['content'] for msg in FILTER_MESSAGE)] if FILTER_MESSAGE else chats
-        print(f"필터링된 채팅 수: {len(filtered_chats)}")
-        saveChats(f"{path}/filtered_chats.md", filtered_chats, FILTER_USER)
-    
+    dirs = [f"./logs/{live_open_date}"]
+    vault_path = getObsidianVaultPath()
+    if vault_path:
+        dirs.append(os.path.join(vault_path, "chzzk-chat-logs", live_open_date))
+
+    saveToDestinations(dirs, chats, filtered_chats)
+    print("저장 위치: " + ", ".join(dirs))
+
 if __name__ == "__main__":
     main()

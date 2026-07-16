@@ -11,15 +11,21 @@
 ```
 git clone https://github.com/zxc88kr/chzzk-chat-crawler.git
 ```
-2. 패키지 설치
+2. 실행
+
+macOS / Linux
 ```
-pip install requests tqdm
-```
-3. 실행
-```
-python chzzk_chat.py
+./run.sh
 영상 ID 또는 URL을 입력하세요: 9330920
 ```
+
+Windows
+```
+run.bat
+영상 ID 또는 URL을 입력하세요: 9330920
+```
+
+> 첫 실행 시 가상환경(venv) 생성과 패키지 설치가 자동으로 진행됩니다. 별도로 `pip install`을 실행할 필요가 없습니다.
 > 출력 내용은 자동으로 logs 폴더에 저장됩니다.
 
 ## 예시 입력

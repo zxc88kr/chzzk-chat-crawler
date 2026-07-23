@@ -96,19 +96,12 @@ def saveToDestinations(dirs, chats, filtered_chats):
         saveChats(os.path.join(d, "all_chats.md"), chats, None)
         saveChats(os.path.join(d, "filtered_chats.md"), filtered_chats, FILTER_USER)
 
-def main():
-    videoId = input("영상 ID 또는 URL을 입력하세요: ").strip()
-    # 사용자가 'https://chzzk.naver.com/video/9330920' 처럼 넣는 경우를 대비하여 파싱
-    try:
-        videoId = int(videoId.split('/')[-1])
-    except ValueError:
-        print("유효한 영상 ID 또는 URL을 입력하세요.")
-        return
-
-    chats, live_open_date = fetchChats(videoId)
-    if chats is None:
+def processVideo(videoId):
+    result = fetchChats(videoId)
+    if result is None:
         print("채팅 데이터를 가져오는 데 실패했습니다.")
         return
+    chats, live_open_date = result
 
     print(f"채팅 수: {len(chats)}")
     filtered_chats = [chat for chat in chats if any(msg in chat['content'] for msg in FILTER_MESSAGE)] if FILTER_MESSAGE else chats
@@ -121,6 +114,27 @@ def main():
 
     saveToDestinations(dirs, chats, filtered_chats)
     print("저장 위치: " + ", ".join(dirs))
+
+def main():
+    while True:
+        try:
+            userInput = input("영상 ID 또는 URL을 입력하세요 (종료: q 또는 빈 입력): ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            break
+
+        if not userInput or userInput.lower() in ("q", "quit", "exit", "종료"):
+            break
+
+        # 사용자가 'https://chzzk.naver.com/video/9330920' 처럼 넣는 경우를 대비하여 파싱
+        try:
+            videoId = int(userInput.split('/')[-1])
+        except ValueError:
+            print("유효한 영상 ID 또는 URL을 입력하세요.")
+            continue
+
+        processVideo(videoId)
+        print()
 
 if __name__ == "__main__":
     main()

@@ -27,7 +27,10 @@ def fetch_chats(video_id):
         print(f"영상 '{video_id}'에 대한 데이터를 불러오지 못했습니다: {video_data['message']}")
         return None
 
-    live_open_date = video_data["content"]["liveOpenDate"].split()[0].replace("-", ".")
+    content = video_data["content"]
+    # 업로드 영상은 liveOpenDate가 없으므로 publishDate로 대체
+    date_str = content["liveOpenDate"] or content["publishDate"]
+    live_open_date = date_str.split()[0].replace("-", ".")
 
     chats = []
     player_message_time = 0

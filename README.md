@@ -16,17 +16,18 @@ git clone https://github.com/zxc88kr/chzzk-chat-crawler.git
 macOS / Linux
 ```
 ./run.sh
-영상 ID 또는 URL을 입력하세요: 9330920
+영상 ID 또는 URL을 입력하세요 (종료: q 또는 빈 입력): 9330920
 ```
 
 Windows
 ```
 run.bat
-영상 ID 또는 URL을 입력하세요: 9330920
+영상 ID 또는 URL을 입력하세요 (종료: q 또는 빈 입력): 9330920
 ```
 
 > 첫 실행 시 가상환경(venv) 생성과 패키지 설치가 자동으로 진행됩니다. 별도로 `pip install`을 실행할 필요가 없습니다.
 > 출력 내용은 자동으로 logs 폴더에 저장됩니다.
+> 작업이 끝나면 다음 영상 ID를 이어서 입력할 수 있고, `q` 또는 빈 입력으로 종료합니다.
 
 ## 예시 입력
 - 영상 ID

@@ -30,7 +30,7 @@ def fetch_chats(video_id):
     content = video_data["content"]
     # 업로드 영상은 liveOpenDate가 없으므로 publishDate로 대체
     date_str = content["liveOpenDate"] or content["publishDate"]
-    live_open_date = date_str.split()[0].replace("-", ".")
+    live_open_date = date_str.split()[0]
 
     chats = []
     player_message_time = 0

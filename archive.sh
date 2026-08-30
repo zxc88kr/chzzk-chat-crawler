@@ -6,4 +6,4 @@ if ! command -v yt-dlp >/dev/null; then
     exit 1
 fi
 
-python3 archive.py "$@"
+python3 -B archive.py "$@"

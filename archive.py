@@ -10,11 +10,12 @@ import chat
 
 FPS = 60
 MIN_FREE_GB = 30          # 다운로드 전 최소 여유 공간
-WINDOW_SEC = 60           # 하이라이트 검출 슬라이딩 윈도우 크기
+WINDOW_SEC = 20           # 하이라이트 검출 슬라이딩 윈도우 크기
 MARKER_OFFSET_SEC = 10    # 채팅은 사건보다 늦게 터지므로 마커를 앞으로 당기는 정도
-MIN_CHATS_PER_WINDOW = 12 # 이보다 적게 몰린 구간은 하이라이트로 안 봄
-MIN_GAP_SEC = 120         # 마커 간 최소 간격
-MAX_MARKERS = 30
+DENSITY_FACTOR = 3        # 방송 평균 밀도의 몇 배부터 하이라이트로 볼지
+MIN_CHATS_PER_WINDOW = 5  # 조용한 방송에서도 이보다 적은 구간은 잡음으로 간주
+MIN_GAP_SEC = 80          # 마커 간 최소 간격
+MAX_MARKERS = 50
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CHAT_LINE = re.compile(r"^\[(\d+):(\d+):(\d+):(\d+)\] .+? \([0-9a-f]+\) - (.*)$")
@@ -98,6 +99,10 @@ def find_highlights(chats, duration):
     for sec, _ in chats:
         counts[int(sec)] += 1
 
+    # 방송마다 채팅량이 달라 절대 기준 대신 그 방송 평균 밀도의 배수로 판단
+    mean_density = len(chats) * WINDOW_SEC / end
+    threshold = max(MIN_CHATS_PER_WINDOW, round(mean_density * DENSITY_FACTOR))
+
     window_sum = sum(counts[:WINDOW_SEC])
     windows = []
     for t in range(end - WINDOW_SEC):
@@ -106,7 +111,7 @@ def find_highlights(chats, duration):
 
     picked = []
     for count, t in sorted(windows, reverse=True):
-        if count < MIN_CHATS_PER_WINDOW or len(picked) >= MAX_MARKERS:
+        if count < threshold or len(picked) >= MAX_MARKERS:
             break
         if all(abs(t - pt) >= MIN_GAP_SEC for _, pt in picked):
             picked.append((count, t))

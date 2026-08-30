@@ -1,7 +1,9 @@
 logs/*
+!logs/.gitkeep
 videos/*
 !videos/.gitkeep
-!logs/.gitkeep
+premiere/*
+!premiere/.gitkeep
 .DS_Store
 config.json
 __pycache__/

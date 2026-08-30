@@ -39,7 +39,7 @@ python3 chat.py [링크]
 
 ## 결과물
 - `videos/{MMDD 제목}.mp4` — 영상 (1080p60)
-- `videos/{MMDD 제목}.xml` — 프리미어 마커 XML. Premiere Pro에서 File > Import 하면 영상이 올라간 시퀀스와 하이라이트 마커가 생성됩니다. 마커 이름은 `[채팅 수] 대표 채팅`.
+- `premiere/{MMDD 제목}.xml` — 프리미어 마커 XML. Premiere Pro에서 File > Import 하면 영상이 올라간 시퀀스와 하이라이트 마커가 생성됩니다. 마커 이름은 `[채팅 수] 대표 채팅`.
 - `logs/{YYYY-MM-DD}/all_chats.md`, `filtered_chats.md` — 채팅 로그 (같은 날 다른 방송이 있으면 파일명에 영상 ID가 붙습니다)
 
 ## 설정 (선택)

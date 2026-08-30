@@ -75,10 +75,11 @@ def update_timestamp_note(meta):
     print(f"타임스탬프 노트에 기록했습니다: {meta['date']} / {meta['title']}")
 
 
-def video_paths(meta, video_dir):
-    mmdd = meta["date"][5:7] + meta["date"][8:10]
-    base = os.path.join(video_dir, f"{mmdd} {meta['title']}")
-    return base + ".mp4", base + ".xml"
+def output_paths(meta, video_dir):
+    name = f"{meta['date'][5:7]}{meta['date'][8:10]} {meta['title']}"
+    xml_dir = os.path.join(BASE_DIR, "premiere")
+    os.makedirs(xml_dir, exist_ok=True)
+    return os.path.join(video_dir, name + ".mp4"), os.path.join(xml_dir, name + ".xml")
 
 
 def find_filtered_log(meta):
@@ -262,7 +263,7 @@ def archive(user_input):
         return
     video_dir = get_video_dir()
     os.makedirs(video_dir, exist_ok=True)
-    video_path, xml_path = video_paths(meta, video_dir)
+    video_path, xml_path = output_paths(meta, video_dir)
 
     print(f"\n=== {meta['date']} {meta['title']} ({meta['video_id']}) ===")
     print("[1/4] 타임스탬프 노트 기록")

@@ -1,5 +1,3 @@
-# Copyright (c) 2026-present 마지막남은뚜또. All rights reserved.
-
 import json
 import os
 import sys

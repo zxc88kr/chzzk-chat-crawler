@@ -9,8 +9,6 @@
 3. **프리미어 마커 XML 생성** — 채팅이 몰린 하이라이트 구간을 분석해 Premiere Pro로 바로 가져올 수 있는 시퀀스 XML 생성
 4. **영상 다운로드** — yt-dlp로 최고 화질(1080p60) 다운로드
 
-채팅 크롤링 코드는 [마지막남은뚜또](https://github.com/LastDice)님의 코드를 기반으로 작성하였습니다.
-
 ## 요구 사항
 - macOS, Python 3 (기본 설치본으로 충분, 외부 패키지 불필요)
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp)와 ffmpeg: `brew install yt-dlp ffmpeg`

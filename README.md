@@ -30,13 +30,13 @@ git clone https://github.com/zxc88kr/chzzk-vod-archiver.git
 ./archive.sh https://chzzk.naver.com/video/9330920
 ```
 
-> 첫 실행 시 가상환경(venv) 생성과 패키지 설치가 자동으로 진행됩니다.
+> 외부 파이썬 패키지를 사용하지 않아 별도 설치 과정이 없습니다.
 > 이미 다운로드된 영상·기록된 타임스탬프는 자동으로 건너뜁니다.
 > 디스크 여유 공간이 30GB 미만이면 영상 다운로드를 중단합니다.
 
 채팅 크롤링만 필요하면 단독으로도 실행할 수 있습니다.
 ```
-source venv/bin/activate && python3 chat.py [링크]
+python3 chat.py [링크]
 ```
 
 ## 결과물

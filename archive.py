@@ -35,7 +35,7 @@ def get_video_dir():
 
 
 def fetch_metadata(video_id):
-    data = chat.session.get(f"{chat.API_BASE}/v2/videos/{video_id}").json()
+    data = chat.get_json(f"{chat.API_BASE}/v2/videos/{video_id}")
     if data["code"] != 200:
         print(f"영상 '{video_id}'의 정보를 불러오지 못했습니다: {data['message']}")
         return None

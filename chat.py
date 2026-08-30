@@ -3,11 +3,10 @@
 import json
 import os
 import sys
-
-import requests
-import tqdm
+import urllib.request
 
 API_BASE = "https://api.chzzk.naver.com/service"
+USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
 
 # 채팅 내용 필터 (해당 문자열이 하나라도 포함되면 유지)
 FILTER_MESSAGE = ["ㄱ", "ㄷ", "ㅇ", "ㅉ", "ㅋ", "ㅎ", "?"]
@@ -16,14 +15,14 @@ FILTER_USER = "34908dd0d6c0d1495ace4f281b515094"
 # 제외할 봇 유저 (UID)
 BOT_USER = "bb88ee67c4551e08e953f291d41f1a85"
 
-session = requests.Session()
-session.headers.update({
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-})
+def get_json(url):
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    with urllib.request.urlopen(request) as response:
+        return json.load(response)
 
 
 def fetch_chats(video_id):
-    video_data = session.get(f"{API_BASE}/v2/videos/{video_id}").json()
+    video_data = get_json(f"{API_BASE}/v2/videos/{video_id}")
     if video_data["code"] != 200:
         print(f"영상 '{video_id}'에 대한 데이터를 불러오지 못했습니다: {video_data['message']}")
         return None
@@ -35,24 +34,21 @@ def fetch_chats(video_id):
 
     chats = []
     player_message_time = 0
-    pbar = tqdm.tqdm(desc=f"Fetching chats for video ID {video_id}", unit=" chats")
     while True:
-        chat_data = session.get(
+        chat_data = get_json(
             f"{API_BASE}/v1/videos/{video_id}/chats"
             f"?playerMessageTime={player_message_time}&previousVideoChatSize=50"
-        ).json()
+        )
         if chat_data["code"] != 200:
-            pbar.write(f"채팅 데이터를 불러오지 못했습니다 (playerMessageTime: {player_message_time}): {chat_data['message']}")
+            print(f"채팅 데이터를 불러오지 못했습니다 (playerMessageTime: {player_message_time}): {chat_data['message']}")
             break
 
         content = chat_data["content"]
         chats.extend(content["videoChats"])
-        pbar.update(len(content["videoChats"]))
 
         if content["nextPlayerMessageTime"] is None:
             break
         player_message_time = content["nextPlayerMessageTime"]
-    pbar.close()
     return chats, live_open_date
 
 

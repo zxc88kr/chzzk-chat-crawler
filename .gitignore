@@ -2,7 +2,6 @@ logs/*
 videos/*
 !videos/.gitkeep
 !logs/.gitkeep
-venv/
 .DS_Store
 config.json
 __pycache__/

@@ -2,36 +2,32 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 import urllib.parse
 from xml.sax.saxutils import escape
 
 import chat
 
-FPS = 60
+FPS = chat.FPS
 MIN_FREE_GB = 30          # 다운로드 전 최소 여유 공간
+EST_GB_PER_HOUR = 8       # 방송 1시간당 요구 공간 (1080p60 약 4GB + 컨테이너 변환 임시 공간)
 WINDOW_SEC = 20           # 하이라이트 검출 슬라이딩 윈도우 크기
-MARKER_OFFSET_SEC = 0   # 채팅이 몰리기 시작한 지점에 그대로 찍음 (컷 시작점은 편집에서 뒤로 스크럽)
+MARKER_OFFSET_SEC = 0     # 채팅이 몰리기 시작한 지점에 그대로 찍음 (컷 시작점은 편집에서 뒤로 스크럽)
 DENSITY_FACTOR = 3        # 방송 평균 밀도의 몇 배부터 하이라이트로 볼지
-MIN_CHATS_PER_WINDOW = 4  # 조용한 방송에서도 이보다 적은 구간은 잡음으로 간주
+MIN_CHATS_PER_WINDOW = 4  # 조용한 방송에서도 이보다 적게 몰린 구간은 잡음으로 간주
 MIN_GAP_SEC = 80          # 마커 간 최소 간격
 MAX_MARKERS = 50
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CHAT_LINE = re.compile(r"^\[(\d+):(\d+):(\d+):(\d+)\] .+? \([0-9a-f]+\) - (.*)$")
 
 
 def fetch_metadata(video_id):
-    data = chat.get_json(f"{chat.API_BASE}/v2/videos/{video_id}")
-    if data["code"] != 200:
-        print(f"영상 '{video_id}'의 정보를 불러오지 못했습니다: {data['message']}")
+    content = chat.fetch_video_content(video_id)
+    if content is None:
         return None
-    content = data["content"]
-    date = (content["liveOpenDate"] or content["publishDate"]).split()[0]
     return {
         "video_id": content["videoNo"],
-        "title": normalize_title(content["videoTitle"]),
-        "date": date,
+        "title": normalize_title(content["videoTitle"]) or str(content["videoNo"]),
+        "date": chat.broadcast_date(content),
         "duration": content["duration"],
     }
 
@@ -47,7 +43,7 @@ def update_timestamp_note(meta):
     if not vault_path:
         print("옵시디언 볼트를 찾지 못해 타임스탬프 기록을 건너뜁니다.")
         return
-    note_path = os.path.join(vault_path, "치지직", "타임스탬프.md")
+    note_path = os.path.join(vault_path, chat.VAULT_SUBDIR, "타임스탬프.md")
     content = ""
     if os.path.exists(note_path):
         with open(note_path, encoding="utf-8") as f:
@@ -55,9 +51,12 @@ def update_timestamp_note(meta):
         if re.search(rf"^\s*{meta['video_id']}\s*$", content, re.M):
             print(f"타임스탬프 노트에 이미 기록된 영상입니다: {meta['video_id']}")
             return
-    entry = f"{meta['date']}\n{meta['title']}\n{meta['video_id']}"
+    entry = f"{meta['date']}\n{meta['title']}\n{meta['video_id']}\n"
+    if content.strip():
+        entry = content.rstrip() + "\n\n" + entry
+    os.makedirs(os.path.dirname(note_path), exist_ok=True)
     with open(note_path, "w", encoding="utf-8") as f:
-        f.write(content.rstrip() + "\n\n" + entry + "\n")
+        f.write(entry)
     print(f"타임스탬프 노트에 기록했습니다: {meta['date']} / {meta['title']}")
 
 
@@ -76,14 +75,20 @@ def find_filtered_log(meta):
     if os.path.exists(suffixed):
         return suffixed
     default = os.path.join(log_dir, "filtered_chats.md")
-    return default if os.path.exists(default) else None
+    if not os.path.exists(default):
+        return None
+    # 같은 날 다른 방송의 로그로 마커를 만들지 않도록 영상 ID를 확인
+    logged_id = chat.read_logged_video_id(default)
+    if logged_id is not None and logged_id != str(meta["video_id"]):
+        return None
+    return default
 
 
 def parse_chat_log(path):
     chats = []
     with open(path, encoding="utf-8") as f:
         for line in f:
-            m = CHAT_LINE.match(line)
+            m = chat.CHAT_LINE.match(line)
             if m:
                 h, mi, s, fr, msg = m.groups()
                 sec = int(h) * 3600 + int(mi) * 60 + int(s) + int(fr) / FPS
@@ -244,21 +249,25 @@ def generate_premiere_xml(meta, video_path, xml_path):
 def download_video(meta, video_path):
     if os.path.exists(video_path):
         print(f"이미 다운로드된 영상입니다: {video_path}")
-        return True
+        return
     free_gb = shutil.disk_usage(os.path.dirname(video_path)).free / 1e9
-    if free_gb < MIN_FREE_GB:
-        print(f"디스크 여유 공간이 {free_gb:.0f}GB뿐이라 다운로드를 중단합니다 (최소 {MIN_FREE_GB}GB 필요).")
-        return False
-    result = subprocess.run([
-        "yt-dlp", "-N", "8", "--merge-output-format", "mp4",
-        "-o", os.path.splitext(video_path)[0] + ".%(ext)s",
-        f"https://chzzk.naver.com/video/{meta['video_id']}",
-    ])
+    need_gb = max(MIN_FREE_GB, meta["duration"] / 3600 * EST_GB_PER_HOUR)
+    if free_gb < need_gb:
+        print(f"디스크 여유 공간이 {free_gb:.0f}GB뿐이라 다운로드를 중단합니다 (이 방송 기준 {need_gb:.0f}GB 필요).")
+        return
+    template = os.path.splitext(video_path)[0].replace("%", "%%") + ".%(ext)s"
+    try:
+        result = subprocess.run([
+            "yt-dlp", "-N", "8", "--merge-output-format", "mp4", "-o", template,
+            f"https://chzzk.naver.com/video/{meta['video_id']}",
+        ])
+    except FileNotFoundError:
+        print("yt-dlp가 설치되어 있지 않습니다. 설치: brew install yt-dlp")
+        return
     if result.returncode != 0 or not os.path.exists(video_path):
         print("영상 다운로드에 실패했습니다.")
-        return False
+        return
     print(f"영상 다운로드 완료: {video_path}")
-    return True
 
 
 def archive(user_input):
@@ -275,30 +284,16 @@ def archive(user_input):
     print("[1/4] 타임스탬프 노트 기록")
     update_timestamp_note(meta)
     print("[2/4] 채팅 크롤링")
-    chat.process_video(video_id)
+    crawled = chat.process_video(video_id, meta["date"])
     print("[3/4] 프리미어 마커 XML 생성")
-    generate_premiere_xml(meta, video_path, xml_path)
+    if crawled:
+        generate_premiere_xml(meta, video_path, xml_path)
+    else:
+        # 오래된 로그가 남아 있어도 다른 방송의 채팅으로 마커를 만들지 않도록 건너뜀
+        print("채팅 크롤링이 실패해 마커 XML 생성을 건너뜁니다.")
     print("[4/4] 영상 다운로드")
     download_video(meta, video_path)
 
 
-def main():
-    if sys.argv[1:]:
-        for arg in sys.argv[1:]:
-            archive(arg)
-        return
-
-    while True:
-        try:
-            user_input = input("다시보기 링크 또는 영상 ID를 입력하세요 (종료: q 또는 빈 입력): ").strip()
-        except (EOFError, KeyboardInterrupt):
-            print()
-            break
-        if not user_input or user_input.lower() in ("q", "quit", "exit", "종료"):
-            break
-        archive(user_input)
-        print()
-
-
 if __name__ == "__main__":
-    main()
+    chat.run_cli(archive, "다시보기 링크 또는 영상 ID를 입력하세요 (종료: q 또는 빈 입력): ")

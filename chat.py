@@ -1,15 +1,23 @@
 import json
 import os
+import re
 import sys
+import urllib.error
 import urllib.request
 
 API_BASE = "https://api.chzzk.naver.com/service"
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+FPS = 60
+VAULT_SUBDIR = "치지직"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# format_chat이 만드는 한 줄 포맷의 역파싱 정규식 - 포맷 변경 시 함께 수정
+CHAT_LINE = re.compile(r"^\[(\d+):(\d+):(\d+):(\d+)\] .+? \([0-9a-f]+\) - (.*)$")
+
 
 def load_config():
-    config_path = os.path.join(os.path.dirname(__file__), "config.json")
     try:
-        with open(config_path, encoding="utf-8") as f:
+        with open(os.path.join(BASE_DIR, "config.json"), encoding="utf-8") as f:
             return json.load(f)
     except FileNotFoundError:
         sys.exit("config.json이 없습니다.")
@@ -24,23 +32,34 @@ HIGHLIGHT_USERS = CONFIG["highlight_users"]
 # 제외할 봇 유저 (UID)
 BOT_USERS = CONFIG["bot_users"]
 
+
 def get_json(url):
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(request) as response:
-        return json.load(response)
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as error:
+        # 치지직 API는 오류도 JSON 본문(code/message)으로 주므로 살려서 반환
+        try:
+            return json.load(error)
+        except ValueError:
+            return {"code": error.code, "message": str(error)}
+
+
+def fetch_video_content(video_id):
+    data = get_json(f"{API_BASE}/v2/videos/{video_id}")
+    if data["code"] != 200:
+        print(f"영상 '{video_id}'의 정보를 불러오지 못했습니다: {data['message']}")
+        return None
+    return data["content"]
+
+
+def broadcast_date(content):
+    # 업로드 영상은 liveOpenDate가 없으므로 publishDate로 대체
+    return (content["liveOpenDate"] or content["publishDate"]).split()[0]
 
 
 def fetch_chats(video_id):
-    video_data = get_json(f"{API_BASE}/v2/videos/{video_id}")
-    if video_data["code"] != 200:
-        print(f"영상 '{video_id}'에 대한 데이터를 불러오지 못했습니다: {video_data['message']}")
-        return None
-
-    content = video_data["content"]
-    # 업로드 영상은 liveOpenDate가 없으므로 publishDate로 대체
-    date_str = content["liveOpenDate"] or content["publishDate"]
-    live_open_date = date_str.split()[0]
-
     chats = []
     player_message_time = 0
     while True:
@@ -49,43 +68,39 @@ def fetch_chats(video_id):
             f"?playerMessageTime={player_message_time}&previousVideoChatSize=50"
         )
         if chat_data["code"] != 200:
+            # 부분 수집본으로 기존 로그를 덮어쓰지 않도록 실패로 처리
             print(f"채팅 데이터를 불러오지 못했습니다 (playerMessageTime: {player_message_time}): {chat_data['message']}")
-            break
+            return None
 
         content = chat_data["content"]
         chats.extend(content["videoChats"])
 
         if content["nextPlayerMessageTime"] is None:
-            break
+            return chats
         player_message_time = content["nextPlayerMessageTime"]
-    return chats, live_open_date
 
 
-def format_timestamp(ms, fps=60):
+def format_timestamp(ms):
     hours = ms // 3600000
     minutes = ms // 60000 % 60
     seconds = ms // 1000 % 60
-    frames = ms % 1000 * fps // 1000
+    frames = ms % 1000 * FPS // 1000
     return f"{hours:02}:{minutes:02}:{seconds:02}:{frames:02}"
 
 
 def format_chat(chat, highlight_users):
-    if not chat.get("profile") or chat.get("userIdHash") in BOT_USERS:
-        return None
     nickname = json.loads(chat["profile"])["nickname"]
     if highlight_users and chat["userIdHash"] in highlight_users:
         nickname = f"<u>{nickname}</u>"
     timestamp = format_timestamp(chat["playerMessageTime"])
-    return f"[{timestamp}] {nickname} ({chat['userIdHash']}) - {chat['content']}"
+    return f"[{timestamp}] {nickname} ({chat['userIdHash']}) - {chat.get('content') or ''}"
 
 
 def save_chats(path, chats, video_id, highlight_users=None):
     with open(path, "w", encoding="utf-8") as f:
         f.write(f"---\nvideo: {video_id}\n---\n")
         for chat in chats:
-            line = format_chat(chat, highlight_users)
-            if line:
-                f.write(line + "\n")
+            f.write(format_chat(chat, highlight_users) + "\n")
 
 
 def read_logged_video_id(path):
@@ -104,20 +119,26 @@ def get_obsidian_vault_path():
 
 
 def output_dirs(live_open_date):
-    dirs = [os.path.join("logs", live_open_date)]
+    dirs = [os.path.join(BASE_DIR, "logs", live_open_date)]
     vault_path = get_obsidian_vault_path()
     if vault_path:
-        dirs.append(os.path.join(vault_path, "치지직", "로그", live_open_date))
+        dirs.append(os.path.join(vault_path, VAULT_SUBDIR, "로그", live_open_date))
     return dirs
 
 
-def process_video(video_id):
-    result = fetch_chats(video_id)
-    if result is None:
-        return
-    chats, live_open_date = result
+def process_video(video_id, live_open_date=None):
+    if live_open_date is None:
+        content = fetch_video_content(video_id)
+        if content is None:
+            return
+        live_open_date = broadcast_date(content)
 
-    filtered_chats = [c for c in chats if any(m in c["content"] for m in FILTER_MESSAGES)] if FILTER_MESSAGES else chats
+    chats = fetch_chats(video_id)
+    if chats is None:
+        return
+    # 봇과 프로필 없는(후원·시스템성) 레코드는 로그 대상이 아님
+    chats = [c for c in chats if c.get("profile") and c.get("userIdHash") not in BOT_USERS]
+    filtered_chats = [c for c in chats if any(m in (c.get("content") or "") for m in FILTER_MESSAGES)] if FILTER_MESSAGES else chats
     print(f"채팅 수: {len(chats)} (필터링: {len(filtered_chats)})")
 
     dirs = output_dirs(live_open_date)
@@ -129,43 +150,47 @@ def process_video(video_id):
         save_chats(os.path.join(d, f"all_chats{suffix}.md"), chats, video_id)
         save_chats(os.path.join(d, f"filtered_chats{suffix}.md"), filtered_chats, video_id, HIGHLIGHT_USERS)
     print("저장 위치: " + ", ".join(dirs))
+    return True
 
 
 def parse_video_id(user_input):
     try:
-        return int(user_input.rstrip("/").split("/")[-1])
+        return int(user_input.split("?")[0].split("#")[0].rstrip("/").split("/")[-1])
     except ValueError:
         return None
 
 
-def main():
-    for arg in sys.argv[1:]:
-        video_id = parse_video_id(arg)
-        if video_id is None:
-            print(f"유효한 영상 ID 또는 URL이 아닙니다: {arg}")
-            continue
-        process_video(video_id)
+def run_cli(handler, prompt):
+    def run(user_input):
+        try:
+            handler(user_input)
+        except (urllib.error.URLError, TimeoutError) as error:
+            print(f"네트워크 오류: {getattr(error, 'reason', error)}")
+
     if sys.argv[1:]:
+        for arg in sys.argv[1:]:
+            run(arg)
         return
 
     while True:
         try:
-            user_input = input("영상 ID 또는 URL을 입력하세요 (종료: q 또는 빈 입력): ").strip()
+            user_input = input(prompt).strip()
         except (EOFError, KeyboardInterrupt):
             print()
             break
-
         if not user_input or user_input.lower() in ("q", "quit", "exit", "종료"):
             break
-
-        video_id = parse_video_id(user_input)
-        if video_id is None:
-            print("유효한 영상 ID 또는 URL을 입력하세요.")
-            continue
-
-        process_video(video_id)
+        run(user_input)
         print()
 
 
+def crawl(user_input):
+    video_id = parse_video_id(user_input)
+    if video_id is None:
+        print(f"유효한 영상 ID 또는 URL이 아닙니다: {user_input}")
+        return
+    process_video(video_id)
+
+
 if __name__ == "__main__":
-    main()
+    run_cli(crawl, "영상 ID 또는 URL을 입력하세요 (종료: q 또는 빈 입력): ")

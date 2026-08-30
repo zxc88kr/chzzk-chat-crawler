@@ -49,7 +49,7 @@
 | `bot_users` | 로그에서 제외할 봇 계정 ID 목록 |
 | `filter_messages` | 필터본에 남길 기준 문자 목록 |
 
-유저 ID는 `all_chats.md`의 닉네임 뒤 괄호 안 해시를 복사하면 됩니다.
+유저 ID는 `all_chats.md`의 닉네임 뒤 괄호 안 해시를 복사하면 됩니다. 처음 사용한다면 `highlight_users`를 본인 계정 ID로 바꿔주세요.
 
 ## 하이라이트 검출
 

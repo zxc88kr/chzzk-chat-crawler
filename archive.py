@@ -91,6 +91,12 @@ def parse_chat_log(path):
     return chats
 
 
+def sample_score(msg):
+    # ㅋㅋㅋ 같은 리액션 문자를 걷어낸 뒤 남는 정보량이 많은 채팅을 대표로 뽑는다
+    semantic = re.sub(r"[ㄱ-ㅎㅏ-ㅣ?!.,~…\s]", "", msg)
+    return (bool(semantic), len(semantic), len(msg))
+
+
 def find_highlights(chats, duration):
     if not chats:
         return []
@@ -99,7 +105,7 @@ def find_highlights(chats, duration):
     for sec, _ in chats:
         counts[int(sec)] += 1
 
-    # 방송마다 채팅량이 달라 절대 기준 대신 그 방송 평균 밀도의 배수로 판단
+    # 방송 평균 밀도의 배수와 절대 최소값 중 높은 쪽을 기준으로 사용
     mean_density = len(chats) * WINDOW_SEC / end
     threshold = max(MIN_CHATS_PER_WINDOW, round(mean_density * DENSITY_FACTOR))
 
@@ -109,17 +115,27 @@ def find_highlights(chats, duration):
         windows.append((window_sum, t))
         window_sum += counts[t + WINDOW_SEC] - counts[t]
 
+    # 동점 구간은 이른 시각부터 처리해 방송 후반 편향을 막는다
     picked = []
-    for count, t in sorted(windows, reverse=True):
-        if count < threshold or len(picked) >= MAX_MARKERS:
+    for count, t in sorted(windows, key=lambda w: (-w[0], w[1])):
+        if count < threshold:
             break
         if all(abs(t - pt) >= MIN_GAP_SEC for _, pt in picked):
             picked.append((count, t))
 
+    # 상한을 넘으면 경계 동점 후보를 방송 시간 전체에서 균등하게 뽑아 채운다
+    if len(picked) > MAX_MARKERS:
+        cutoff = sorted((c for c, _ in picked), reverse=True)[MAX_MARKERS - 1]
+        keep = [p for p in picked if p[0] > cutoff]
+        tied = sorted((p for p in picked if p[0] == cutoff), key=lambda p: p[1])
+        slots = MAX_MARKERS - len(keep)
+        step = len(tied) / slots
+        picked = keep + [tied[int(i * step)] for i in range(slots)]
+
     highlights = []
     for count, t in sorted(picked, key=lambda p: p[1]):
         in_window = [msg for sec, msg in chats if t <= sec < t + WINDOW_SEC]
-        sample = max(in_window, key=len) if in_window else ""
+        sample = max(in_window, key=sample_score) if in_window else ""
         highlights.append({
             "sec": max(0, t - MARKER_OFFSET_SEC),
             "count": count,

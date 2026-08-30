@@ -6,3 +6,4 @@ premiere/*
 !premiere/.gitkeep
 .DS_Store
 __pycache__/
+.context/

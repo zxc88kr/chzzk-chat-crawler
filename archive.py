@@ -68,7 +68,6 @@ def update_timestamp_note(meta):
         if re.search(rf"^\s*{meta['video_id']}\s*$", content, re.M):
             print(f"타임스탬프 노트에 이미 기록된 영상입니다: {meta['video_id']}")
             return
-        shutil.copy2(note_path, note_path + ".bak")
     entry = f"{meta['date']}\n{meta['title']}\n{meta['video_id']}"
     with open(note_path, "w", encoding="utf-8") as f:
         f.write(content.rstrip() + "\n\n" + entry + "\n")

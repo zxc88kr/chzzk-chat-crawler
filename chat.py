@@ -103,7 +103,7 @@ def output_dirs(live_open_date):
     dirs = [os.path.join("logs", live_open_date)]
     vault_path = get_obsidian_vault_path()
     if vault_path:
-        dirs.append(os.path.join(vault_path, "치지직", live_open_date))
+        dirs.append(os.path.join(vault_path, "치지직", "로그", live_open_date))
     return dirs
 
 

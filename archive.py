@@ -11,7 +11,7 @@ import chat
 FPS = 60
 MIN_FREE_GB = 30          # 다운로드 전 최소 여유 공간
 WINDOW_SEC = 20           # 하이라이트 검출 슬라이딩 윈도우 크기
-MARKER_OFFSET_SEC = 10    # 채팅은 사건보다 늦게 터지므로 마커를 앞으로 당기는 정도
+MARKER_OFFSET_SEC = 5     # 채팅은 사건보다 늦게 터지므로 마커를 앞으로 당기는 정도
 DENSITY_FACTOR = 3        # 방송 평균 밀도의 몇 배부터 하이라이트로 볼지
 MIN_CHATS_PER_WINDOW = 4  # 조용한 방송에서도 이보다 적은 구간은 잡음으로 간주
 MIN_GAP_SEC = 80          # 마커 간 최소 간격

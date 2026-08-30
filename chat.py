@@ -2,6 +2,7 @@
 
 import json
 import os
+import sys
 
 import requests
 import tqdm
@@ -73,12 +74,23 @@ def format_chat(chat, highlight_user):
     return f"[{timestamp}] {nickname} ({chat['userIdHash']}) - {chat['content']}"
 
 
-def save_chats(path, chats, highlight_user=None):
+def save_chats(path, chats, video_id, highlight_user=None):
     with open(path, "w", encoding="utf-8") as f:
+        f.write(f"---\nvideo: {video_id}\n---\n")
         for chat in chats:
             line = format_chat(chat, highlight_user)
             if line:
                 f.write(line + "\n")
+
+
+def read_logged_video_id(path):
+    if not os.path.exists(path):
+        return None
+    with open(path, encoding="utf-8") as f:
+        first, second = f.readline(), f.readline()
+    if first.strip() == "---" and second.startswith("video:"):
+        return second.split(":", 1)[1].strip()
+    return None
 
 
 def get_obsidian_vault_path():
@@ -113,8 +125,11 @@ def process_video(video_id):
     dirs = output_dirs(live_open_date)
     for d in dirs:
         os.makedirs(d, exist_ok=True)
-        save_chats(os.path.join(d, "all_chats.md"), chats)
-        save_chats(os.path.join(d, "filtered_chats.md"), filtered_chats, FILTER_USER)
+        # 같은 날 다른 방송의 로그가 이미 있으면 파일명에 영상 ID를 붙여 구분
+        logged_id = read_logged_video_id(os.path.join(d, "all_chats.md"))
+        suffix = f"_{video_id}" if logged_id is not None and logged_id != str(video_id) else ""
+        save_chats(os.path.join(d, f"all_chats{suffix}.md"), chats, video_id)
+        save_chats(os.path.join(d, f"filtered_chats{suffix}.md"), filtered_chats, video_id, FILTER_USER)
     print("저장 위치: " + ", ".join(dirs))
 
 
@@ -127,6 +142,15 @@ def parse_video_id(user_input):
 
 
 def main():
+    for arg in sys.argv[1:]:
+        video_id = parse_video_id(arg)
+        if video_id is None:
+            print(f"유효한 영상 ID 또는 URL이 아닙니다: {arg}")
+            continue
+        process_video(video_id)
+    if sys.argv[1:]:
+        return
+
     while True:
         try:
             user_input = input("영상 ID 또는 URL을 입력하세요 (종료: q 또는 빈 입력): ").strip()

@@ -10,10 +10,10 @@ import chat
 
 FPS = 60
 MIN_FREE_GB = 30          # 다운로드 전 최소 여유 공간
-WINDOW_SEC = 15           # 하이라이트 검출 슬라이딩 윈도우 크기
+WINDOW_SEC = 60           # 하이라이트 검출 슬라이딩 윈도우 크기
 MARKER_OFFSET_SEC = 10    # 채팅은 사건보다 늦게 터지므로 마커를 앞으로 당기는 정도
-MIN_CHATS_PER_WINDOW = 10 # 이보다 적게 몰린 구간은 하이라이트로 안 봄
-MIN_GAP_SEC = 60          # 마커 간 최소 간격
+MIN_CHATS_PER_WINDOW = 12 # 이보다 적게 몰린 구간은 하이라이트로 안 봄
+MIN_GAP_SEC = 120         # 마커 간 최소 간격
 MAX_MARKERS = 30
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))

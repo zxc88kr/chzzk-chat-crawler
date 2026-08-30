@@ -12,8 +12,8 @@
 채팅 크롤링 코드는 [마지막남은뚜또](https://github.com/LastDice)님의 코드를 기반으로 작성하였습니다.
 
 ## 요구 사항
-- macOS, Python 3
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp): `brew install yt-dlp` (ffmpeg 포함 권장: `brew install ffmpeg`)
+- macOS, Python 3 (기본 설치본으로 충분, 외부 패키지 불필요)
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp)와 ffmpeg: `brew install yt-dlp ffmpeg`
 
 ## 시작 가이드
 1. 프로젝트 클론

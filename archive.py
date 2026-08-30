@@ -1,4 +1,3 @@
-import json
 import os
 import re
 import shutil
@@ -19,16 +18,6 @@ MAX_MARKERS = 30
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CHAT_LINE = re.compile(r"^\[(\d+):(\d+):(\d+):(\d+)\] .+? \([0-9a-f]+\) - (.*)$")
-
-
-def get_video_dir():
-    config_path = os.path.join(BASE_DIR, "config.json")
-    if os.path.exists(config_path):
-        with open(config_path, encoding="utf-8") as f:
-            video_dir = json.load(f).get("video_dir")
-        if video_dir:
-            return os.path.expanduser(video_dir)
-    return os.path.join(BASE_DIR, "videos")
 
 
 def fetch_metadata(video_id):
@@ -71,9 +60,11 @@ def update_timestamp_note(meta):
     print(f"타임스탬프 노트에 기록했습니다: {meta['date']} / {meta['title']}")
 
 
-def output_paths(meta, video_dir):
+def output_paths(meta):
     name = f"{meta['date'][5:7]}{meta['date'][8:10]} {meta['title']}"
+    video_dir = os.path.join(BASE_DIR, "videos")
     xml_dir = os.path.join(BASE_DIR, "premiere")
+    os.makedirs(video_dir, exist_ok=True)
     os.makedirs(xml_dir, exist_ok=True)
     return os.path.join(video_dir, name + ".mp4"), os.path.join(xml_dir, name + ".xml")
 
@@ -257,9 +248,7 @@ def archive(user_input):
     meta = fetch_metadata(video_id)
     if meta is None:
         return
-    video_dir = get_video_dir()
-    os.makedirs(video_dir, exist_ok=True)
-    video_path, xml_path = output_paths(meta, video_dir)
+    video_path, xml_path = output_paths(meta)
 
     print(f"\n=== {meta['date']} {meta['title']} ({meta['video_id']}) ===")
     print("[1/4] 타임스탬프 노트 기록")

@@ -42,15 +42,16 @@ python3 chat.py [링크]
 - `premiere/{MMDD 제목}.xml` — 프리미어 마커 XML. Premiere Pro에서 File > Import 하면 영상이 올라간 시퀀스와 하이라이트 마커가 생성됩니다. 마커 이름은 `[채팅 수] 대표 채팅`.
 - `logs/{YYYY-MM-DD}/all_chats.md`, `filtered_chats.md` — 채팅 로그 (같은 날 다른 방송이 있으면 파일명에 영상 ID가 붙습니다)
 
-## 설정 (선택)
-기본 저장 위치를 바꾸고 싶을 때만 프로젝트 루트에 `config.json`을 만드세요. 없으면 영상은 `videos/`, 옵시디언은 기본 볼트 위치를 사용합니다.
-```json
-{
-    "video_dir": "/Users/이름/영상저장폴더",
-    "obsidian_vault_path": "/Users/이름/내볼트경로"
-}
-```
-> `config.json`은 기기마다 경로가 달라 git에 포함되지 않습니다.
+## 설정 (config.json)
+채팅 처리 기준은 프로젝트 루트의 `config.json`에서 관리합니다 (필수 파일, 저장소에 포함).
+
+| 키 | 역할 |
+|---|---|
+| `highlight_users` | 로그에서 닉네임에 밑줄을 표시할 유저 ID 목록 |
+| `bot_users` | 로그에서 제외할 봇 계정 ID 목록 |
+| `filter_messages` | `filtered_chats.md`에 남길 기준 문자 목록 (하나라도 포함된 채팅만 유지) |
+
+유저 ID는 `all_chats.md`에서 닉네임 뒤 괄호 안의 해시를 복사하면 됩니다.
 
 ## 옵시디언(Obsidian) 연동
 채팅 로그와 타임스탬프 노트를 옵시디언 볼트에도 함께 저장합니다.

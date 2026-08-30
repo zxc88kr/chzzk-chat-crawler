@@ -5,5 +5,4 @@ videos/*
 premiere/*
 !premiere/.gitkeep
 .DS_Store
-config.json
 __pycache__/

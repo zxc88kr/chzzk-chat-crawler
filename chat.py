@@ -6,12 +6,23 @@ import urllib.request
 API_BASE = "https://api.chzzk.naver.com/service"
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
 
+def load_config():
+    config_path = os.path.join(os.path.dirname(__file__), "config.json")
+    try:
+        with open(config_path, encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        sys.exit("config.json이 없습니다.")
+
+
+CONFIG = load_config()
+
 # 채팅 내용 필터 (해당 문자열이 하나라도 포함되면 유지)
-FILTER_MESSAGE = ["ㄱ", "ㄷ", "ㅇ", "ㅉ", "ㅋ", "ㅎ", "?"]
+FILTER_MESSAGES = CONFIG["filter_messages"]
 # 강조할 유저 (UID) - filtered_chats에서 닉네임에 밑줄 표시
-FILTER_USER = "34908dd0d6c0d1495ace4f281b515094"
+HIGHLIGHT_USERS = CONFIG["highlight_users"]
 # 제외할 봇 유저 (UID)
-BOT_USER = "bb88ee67c4551e08e953f291d41f1a85"
+BOT_USERS = CONFIG["bot_users"]
 
 def get_json(url):
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
@@ -58,21 +69,21 @@ def format_timestamp(ms, fps=60):
     return f"{hours:02}:{minutes:02}:{seconds:02}:{frames:02}"
 
 
-def format_chat(chat, highlight_user):
-    if not chat.get("profile") or chat.get("userIdHash") == BOT_USER:
+def format_chat(chat, highlight_users):
+    if not chat.get("profile") or chat.get("userIdHash") in BOT_USERS:
         return None
     nickname = json.loads(chat["profile"])["nickname"]
-    if chat["userIdHash"] == highlight_user:
+    if highlight_users and chat["userIdHash"] in highlight_users:
         nickname = f"<u>{nickname}</u>"
     timestamp = format_timestamp(chat["playerMessageTime"])
     return f"[{timestamp}] {nickname} ({chat['userIdHash']}) - {chat['content']}"
 
 
-def save_chats(path, chats, video_id, highlight_user=None):
+def save_chats(path, chats, video_id, highlight_users=None):
     with open(path, "w", encoding="utf-8") as f:
         f.write(f"---\nvideo: {video_id}\n---\n")
         for chat in chats:
-            line = format_chat(chat, highlight_user)
+            line = format_chat(chat, highlight_users)
             if line:
                 f.write(line + "\n")
 
@@ -88,13 +99,6 @@ def read_logged_video_id(path):
 
 
 def get_obsidian_vault_path():
-    config_path = os.path.join(os.path.dirname(__file__), "config.json")
-    if os.path.exists(config_path):
-        with open(config_path, encoding="utf-8") as f:
-            vault_path = json.load(f).get("obsidian_vault_path")
-        if vault_path:
-            return os.path.expanduser(vault_path)
-
     default_path = os.path.expanduser("~/Documents/Obsidian Vault")
     return default_path if os.path.isdir(default_path) else None
 
@@ -113,7 +117,7 @@ def process_video(video_id):
         return
     chats, live_open_date = result
 
-    filtered_chats = [c for c in chats if any(m in c["content"] for m in FILTER_MESSAGE)] if FILTER_MESSAGE else chats
+    filtered_chats = [c for c in chats if any(m in c["content"] for m in FILTER_MESSAGES)] if FILTER_MESSAGES else chats
     print(f"채팅 수: {len(chats)} (필터링: {len(filtered_chats)})")
 
     dirs = output_dirs(live_open_date)
@@ -123,7 +127,7 @@ def process_video(video_id):
         logged_id = read_logged_video_id(os.path.join(d, "all_chats.md"))
         suffix = f"_{video_id}" if logged_id is not None and logged_id != str(video_id) else ""
         save_chats(os.path.join(d, f"all_chats{suffix}.md"), chats, video_id)
-        save_chats(os.path.join(d, f"filtered_chats{suffix}.md"), filtered_chats, video_id, FILTER_USER)
+        save_chats(os.path.join(d, f"filtered_chats{suffix}.md"), filtered_chats, video_id, HIGHLIGHT_USERS)
     print("저장 위치: " + ", ".join(dirs))
 
 

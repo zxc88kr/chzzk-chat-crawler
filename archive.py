@@ -60,7 +60,7 @@ def update_timestamp_note(meta):
     if not vault_path:
         print("옵시디언 볼트를 찾지 못해 타임스탬프 기록을 건너뜁니다.")
         return
-    note_path = os.path.join(vault_path, "chzzk-chat-logs", "타임스탬프.md")
+    note_path = os.path.join(vault_path, "치지직", "타임스탬프.md")
     content = ""
     if os.path.exists(note_path):
         with open(note_path, encoding="utf-8") as f:

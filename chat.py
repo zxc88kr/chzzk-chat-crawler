@@ -128,7 +128,6 @@ def process_video(video_id):
 
 
 def parse_video_id(user_input):
-    # 'https://chzzk.naver.com/video/9330920' 형태의 URL도 허용
     try:
         return int(user_input.rstrip("/").split("/")[-1])
     except ValueError:

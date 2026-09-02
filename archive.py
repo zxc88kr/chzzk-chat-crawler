@@ -1,4 +1,5 @@
 import fcntl
+import glob
 import json
 import os
 import re
@@ -31,7 +32,6 @@ POLL_BASE = "https://api.chzzk.naver.com/polling/v2"
 POLL_SEC = 30             # 방송 시작 감지 주기
 LIVE_GB_PER_HOUR = 4      # 라이브 1시간당 요구 공간 (1080p60 실측 3.81GB + 변환 여유)
 DISK_FLOOR_GB = 5         # 녹화 도중 여유 공간이 이 아래로 내려가면 스스로 멈춘다
-LIVE_SUFFIX = " (라이브)"  # 다시보기 파일명과 겹치지 않게 붙이는 표식
 
 
 def fetch_metadata(video_id):
@@ -43,6 +43,8 @@ def fetch_metadata(video_id):
         "title": normalize_title(content["videoTitle"]) or str(content["videoNo"]),
         "date": chat.broadcast_date(content),
         "duration": content["duration"],
+        # 라이브와 다시보기를 이어주는 유일한 열쇠. 영상 번호는 체계가 달라 못 쓴다
+        "opened": content.get("liveOpenDate"),
     }
 
 
@@ -52,7 +54,7 @@ def normalize_title(title):
     return re.sub(r'[\\:*?"<>|]', "", title).strip()
 
 
-def update_timestamp_note(meta):
+def update_timestamp_note(meta, replaces=None):
     vault_path = chat.get_obsidian_vault_path()
     if not vault_path:
         print("옵시디언 볼트를 찾지 못해 타임스탬프 기록을 건너뜁니다.")
@@ -65,17 +67,32 @@ def update_timestamp_note(meta):
         if re.search(rf"^\s*{meta['video_id']}\s*$", content, re.M):
             print(f"타임스탬프 노트에 이미 기록된 영상입니다: {meta['video_id']}")
             return
-    entry = f"{meta['date']}\n{meta['title']}\n{meta['video_id']}\n"
-    if content.strip():
-        entry = content.rstrip() + "\n\n" + entry
+    entry = f"{meta['date']}\n{meta['title']}\n{meta['video_id']}"
+    blocks = [b.strip() for b in content.split("\n\n") if b.strip()]
+
+    def entry_id(block):
+        return block.splitlines()[-1].strip()
+
+    replaced = False
+    if replaces is not None:
+        # 라이브로 적어둔 항목을 다시보기 항목으로 갈아끼운다 (한 방송에 한 줄만 남도록)
+        for i, block in enumerate(blocks):
+            if entry_id(block) == str(replaces):
+                blocks[i] = entry
+                replaced = True
+                break
+    if not replaced:
+        blocks.append(entry)
+
     os.makedirs(os.path.dirname(note_path), exist_ok=True)
     with open(note_path, "w", encoding="utf-8") as f:
-        f.write(entry)
-    print(f"타임스탬프 노트에 기록했습니다: {meta['date']} / {meta['title']}")
+        f.write("\n\n".join(blocks) + "\n")
+    action = "갈아끼웠습니다" if replaced else "기록했습니다"
+    print(f"타임스탬프 노트에 {action}: {meta['date']} / {meta['title']}")
 
 
-def output_paths(meta, suffix=""):
-    name = f"{meta['date'][5:7]}{meta['date'][8:10]} {meta['title']}{suffix}"
+def output_paths(meta):
+    name = f"{meta['date'][5:7]}{meta['date'][8:10]} {meta['title']}"
     video_dir = os.path.join(BASE_DIR, "videos")
     xml_dir = os.path.join(BASE_DIR, "premiere")
     os.makedirs(video_dir, exist_ok=True)
@@ -84,18 +101,68 @@ def output_paths(meta, suffix=""):
 
 
 def find_filtered_log(meta):
+    """이 방송의 필터 채팅 로그를 찾는다.
+
+    같은 날 다른 방송의 로그로 마커를 만들지 않도록 방송 시작 시각을 대조한다.
+    시각이 없는 예전 로그는 종전대로 영상 번호로 확인한다.
+    """
     log_dir = os.path.join(BASE_DIR, "logs", meta["date"])
-    suffixed = os.path.join(log_dir, f"filtered_chats_{meta['video_id']}.md")
-    if os.path.exists(suffixed):
-        return suffixed
-    default = os.path.join(log_dir, "filtered_chats.md")
-    if not os.path.exists(default):
+    opened = meta.get("opened")
+
+    candidates = [os.path.join(log_dir, "filtered_chats.md")]
+    if opened:
+        candidates.append(os.path.join(log_dir,
+                                       f"filtered_chats_{opened[11:13]}{opened[14:16]}.md"))
+    candidates.append(os.path.join(log_dir, f"filtered_chats_{meta['video_id']}.md"))
+
+    for path in candidates:
+        if not os.path.exists(path):
+            continue
+        info = chat.read_log_meta(path)
+        if opened and info.get("opened"):
+            if info["opened"] == opened:
+                return path
+            continue
+        logged = info.get("video")
+        if logged is None or logged == str(meta["video_id"]):
+            return path
+    return None
+
+
+def find_live_leftovers(meta):
+    """이 방송을 라이브로 먼저 받아둔 흔적이 있으면 그 결과물 경로를 돌려준다."""
+    opened = meta.get("opened")
+    if not opened:
         return None
-    # 같은 날 다른 방송의 로그로 마커를 만들지 않도록 영상 ID를 확인
-    logged_id = chat.read_logged_video_id(default)
-    if logged_id is not None and logged_id != str(meta["video_id"]):
-        return None
-    return default
+    log_dir = os.path.join(BASE_DIR, "logs", meta["date"])
+    for path in sorted(glob.glob(os.path.join(log_dir, "all_chats*.md"))):
+        info = chat.read_log_meta(path)
+        if info.get("opened") != opened or info.get("source") != "live":
+            continue
+        title = info.get("title")
+        if not title:
+            return None
+        video_path, xml_path = output_paths({"date": meta["date"], "title": title})
+        return {"video": video_path, "xml": xml_path,
+                "video_id": info.get("video"), "title": title}
+    return None
+
+
+def remove_live_leftovers(leftovers):
+    """다시보기로 갈아끼우면서 라이브가 만든 영상과 XML을 치운다.
+
+    채팅 로그는 같은 이름에 덮어써지므로 따로 지울 것이 없다.
+    """
+    removed = False
+    for path in (leftovers["video"], leftovers["xml"]):
+        if os.path.exists(path):
+            size = os.path.getsize(path)
+            os.remove(path)
+            removed = True
+            print(f"  라이브 결과물 삭제: {os.path.basename(path)} ({size / 1e9:.1f}GB)"
+                  if size > 1e8 else f"  라이브 결과물 삭제: {os.path.basename(path)}")
+    if not removed:
+        print("  삭제할 라이브 결과물이 없습니다 (이미 지웠거나 이름이 바뀐 듯합니다).")
 
 
 def parse_chat_log(path):
@@ -293,19 +360,28 @@ def archive(user_input):
     if meta is None:
         return
     video_path, xml_path = output_paths(meta)
+    # 같은 방송을 라이브로 먼저 받아뒀는지 확인한다 (방송 시작 시각으로 대조)
+    leftovers = find_live_leftovers(meta)
 
     print(f"\n=== {meta['date']} {meta['title']} ({meta['video_id']}) ===")
-    print("[1/4] 타임스탬프 노트 기록")
-    update_timestamp_note(meta)
-    print("[2/4] 채팅 크롤링")
-    crawled = chat.process_video(video_id, meta["date"])
-    print("[3/4] 프리미어 마커 XML 생성")
+    if leftovers:
+        print(f"이 방송의 라이브 녹화본을 다시보기로 갈아끼웁니다: {leftovers['title']}")
+    print("[1/5] 타임스탬프 노트 기록")
+    update_timestamp_note(meta, replaces=leftovers["video_id"] if leftovers else None)
+    print("[2/5] 채팅 크롤링")
+    crawled = chat.process_video(video_id, meta["date"], meta.get("opened"), "vod")
+    print("[3/5] 프리미어 마커 XML 생성")
     if crawled:
         generate_premiere_xml(meta, video_path, xml_path)
     else:
         # 오래된 로그가 남아 있어도 다른 방송의 채팅으로 마커를 만들지 않도록 건너뜀
         print("채팅 크롤링이 실패해 마커 XML 생성을 건너뜁니다.")
-    print("[4/4] 영상 다운로드")
+    print("[4/5] 라이브 녹화본 정리")
+    if leftovers:
+        remove_live_leftovers(leftovers)
+    else:
+        print("  정리할 라이브 녹화본이 없습니다.")
+    print("[5/5] 영상 다운로드")
     download_video(meta, video_path)
 
 
@@ -457,9 +533,7 @@ def finalize(detail, ts_path, messages, ended_at):
         "date": detail["openDate"].split()[0],
         "duration": duration,
     }
-    # 다시보기와 파일명이 겹치면 archive()가 "이미 받았다"고 보고 다운로드를 건너뛴다.
-    # 라이브 녹화본은 다시보기가 올라오면 버리는 임시본이라 표식을 붙여 자리를 비켜준다
-    video_path, xml_path = output_paths(meta, LIVE_SUFFIX)
+    video_path, xml_path = output_paths(meta)
 
     print(f"\n=== {meta['date']} {meta['title']} ({meta['video_id']}) ===")
     print("[1/4] 타임스탬프 노트 기록")
@@ -469,7 +543,10 @@ def finalize(detail, ts_path, messages, ended_at):
     # 기준점은 끝에서 되짚어 잡는다 (to_player_times 설명 참고)
     converted = to_player_times(messages, ended_at - duration)
     if converted:
-        chat.write_chat_logs(converted, meta["video_id"], meta["date"])
+        # 다시보기가 올라오면 archive()가 이 정보로 여기서 만든 결과물을 찾아 치운다
+        chat.write_chat_logs(converted, meta["video_id"], meta["date"],
+                             opened=detail["openDate"], source="live",
+                             title=meta["title"])
     else:
         print("수집된 채팅이 없어 로그 저장을 건너뜁니다.")
 

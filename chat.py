@@ -114,14 +114,28 @@ def format_chat(chat, highlight_users):
     return f"[{timestamp}] {nickname} ({chat['userIdHash']}) - {chat.get('content') or ''}"
 
 
-def save_chats(path, chats, video_id, highlight_users=None):
+def save_chats(path, chats, video_id, highlight_users=None,
+               opened=None, source=None, title=None):
+    """채팅 로그를 저장한다.
+
+    앞머리의 opened(방송 시작 시각)가 이 방송의 신원이다. 영상 번호는 라이브(liveId)와
+    다시보기(videoNo)가 서로 다른 체계라 같은 방송인지 판단하는 데 쓸 수 없다.
+    source와 title은 나중에 다시보기가 올라왔을 때 라이브가 만든 결과물을 찾아
+    치우기 위해 남긴다.
+    """
     with open(path, "w", encoding="utf-8") as f:
-        f.write(f"---\nvideo: {video_id}\n---\n")
+        f.write("---\n")
+        f.write(f"video: {video_id}\n")
+        for key, value in (("opened", opened), ("source", source), ("title", title)):
+            if value:
+                f.write(f"{key}: {value}\n")
+        f.write("---\n")
         for chat in chats:
             f.write(format_chat(chat, highlight_users) + "\n")
 
 
-def write_chat_logs(chats, video_id, live_open_date):
+def write_chat_logs(chats, video_id, live_open_date,
+                    opened=None, source=None, title=None):
     """전체본과 필터본을 로컬 logs/와 옵시디언 볼트에 저장한다.
 
     다시보기 크롤링과 라이브 수집이 같은 형식을 쓰므로 저장 경로도 공유한다.
@@ -134,23 +148,51 @@ def write_chat_logs(chats, video_id, live_open_date):
     dirs = output_dirs(live_open_date)
     for d in dirs:
         os.makedirs(d, exist_ok=True)
-        # 같은 날 다른 방송의 로그가 이미 있으면 파일명에 영상 ID를 붙여 구분
-        logged_id = read_logged_video_id(os.path.join(d, "all_chats.md"))
-        suffix = f"_{video_id}" if logged_id is not None and logged_id != str(video_id) else ""
-        save_chats(os.path.join(d, f"all_chats{suffix}.md"), chats, video_id)
+        suffix = log_suffix(d, video_id, opened)
+        save_chats(os.path.join(d, f"all_chats{suffix}.md"), chats, video_id,
+                   None, opened, source, title)
         save_chats(os.path.join(d, f"filtered_chats{suffix}.md"),
-                   filtered, video_id, HIGHLIGHT_USERS)
+                   filtered, video_id, HIGHLIGHT_USERS, opened, source, title)
     print("저장 위치: " + ", ".join(dirs))
 
 
-def read_logged_video_id(path):
+def read_log_meta(path):
+    """로그 앞머리를 딕셔너리로 읽는다. 앞머리가 없는 예전 로그면 빈 딕셔너리."""
     if not os.path.exists(path):
-        return None
+        return {}
+    meta = {}
     with open(path, encoding="utf-8") as f:
-        first, second = f.readline(), f.readline()
-    if first.strip() == "---" and second.startswith("video:"):
-        return second.split(":", 1)[1].strip()
-    return None
+        if f.readline().strip() != "---":
+            return {}
+        for line in f:
+            if line.strip() == "---":
+                break
+            if ":" in line:
+                key, value = line.split(":", 1)   # 시각의 콜론은 값에 남는다
+                meta[key.strip()] = value.strip()
+    return meta
+
+
+def read_logged_video_id(path):
+    return read_log_meta(path).get("video")
+
+
+def log_suffix(directory, video_id, opened):
+    """같은 날 다른 방송의 로그를 덮어쓰지 않도록 붙일 접미사.
+
+    시작 시각이 같으면 같은 방송이므로 접미사 없이 덮어쓴다. 라이브로 먼저 받아둔
+    로그를 다시보기 로그가 그대로 대체하게 하려는 것이다.
+    """
+    existing = read_log_meta(os.path.join(directory, "all_chats.md"))
+    if not existing:
+        return ""
+    if opened and existing.get("opened"):
+        if existing["opened"] == opened:
+            return ""
+        return "_" + opened[11:13] + opened[14:16]      # 다른 방송 - 시작 시각으로 구분
+    # 시작 시각이 없는 예전 로그는 종전대로 영상 번호로 판단한다
+    logged = existing.get("video")
+    return f"_{video_id}" if logged is not None and logged != str(video_id) else ""
 
 
 def get_obsidian_vault_path():
@@ -166,19 +208,20 @@ def output_dirs(live_open_date):
     return dirs
 
 
-def process_video(video_id, live_open_date=None):
-    if live_open_date is None:
+def process_video(video_id, live_open_date=None, opened=None, source="vod"):
+    if live_open_date is None or opened is None:
         content = fetch_video_content(video_id)
         if content is None:
             return
-        live_open_date = broadcast_date(content)
+        live_open_date = live_open_date or broadcast_date(content)
+        opened = opened or content.get("liveOpenDate")
 
     chats = fetch_chats(video_id)
     if chats is None:
         return
     # 봇과 프로필 없는(후원·시스템성) 레코드는 로그 대상이 아님
     chats = [c for c in chats if c.get("profile") and c.get("userIdHash") not in BOT_USERS]
-    write_chat_logs(chats, video_id, live_open_date)
+    write_chat_logs(chats, video_id, live_open_date, opened, source)
     return True
 
 

@@ -10,7 +10,7 @@
 cd "$(dirname "$0")"
 
 REPO="$(pwd)"
-LABEL="com.chzzk-vod-archiver.live"
+LABEL="com.chzzk-archiver.live"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 
 unload_agent() {

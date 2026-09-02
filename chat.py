@@ -17,6 +17,13 @@ API_BASE = "https://api.chzzk.naver.com/service"
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
 FPS = 60
 VAULT_SUBDIR = "치지직"
+HTTP_TIMEOUT = 15
+ALL_LOG, FILTERED_LOG = "all_chats", "filtered_chats"   # 로그 파일명 규약 (archive.py도 사용)
+
+# 라이브 채팅 WebSocket 프로토콜
+WS_VERSION, WS_SERVICE, WS_DEVICE = "3", "game", 2001
+WS_SERVERS = 9
+CMD_PING, CMD_CONNECT, CMD_PONG, CMD_CHAT = 0, 100, 10000, 93101
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # format_chat이 만드는 한 줄 포맷의 역파싱 정규식 - 포맷 변경 시 함께 수정
@@ -43,12 +50,18 @@ FILTER_MESSAGES = CONFIG["filter_messages"]
 HIGHLIGHT_USERS = CONFIG["highlight_users"]
 # 제외할 봇 유저 (UID)
 BOT_USERS = CONFIG["bot_users"]
+# 옵시디언 볼트 (config.json의 obsidian_vault로 덮어쓸 수 있음)
+DEFAULT_VAULT = "~/Documents/Obsidian Vault"
+
+
+def open_url(url):
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    return urllib.request.urlopen(request, timeout=HTTP_TIMEOUT)
 
 
 def get_json(url):
-    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     try:
-        with urllib.request.urlopen(request, timeout=15) as response:
+        with open_url(url) as response:
             return json.load(response)
     except urllib.error.HTTPError as error:
         # 치지직 API는 오류도 JSON 본문(code/message)으로 주므로 살려서 반환
@@ -59,8 +72,7 @@ def get_json(url):
 
 
 def get_text(url):
-    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(request, timeout=15) as response:
+    with open_url(url) as response:
         return response.read().decode("utf-8", "replace")
 
 
@@ -96,6 +108,14 @@ def fetch_chats(video_id):
         if content["nextPlayerMessageTime"] is None:
             return chats
         player_message_time = content["nextPlayerMessageTime"]
+
+
+def is_loggable(profile, uid):
+    """로그에 남길 채팅인지. 봇과 프로필 없는(후원·시스템성) 레코드는 제외한다.
+
+    다시보기와 라이브가 같은 기준을 쓰도록 여기 한 곳에만 둔다.
+    """
+    return bool(profile) and uid not in BOT_USERS
 
 
 def format_timestamp(ms):
@@ -149,11 +169,16 @@ def write_chat_logs(chats, video_id, live_open_date,
     for d in dirs:
         os.makedirs(d, exist_ok=True)
         suffix = log_suffix(d, video_id, opened)
-        save_chats(os.path.join(d, f"all_chats{suffix}.md"), chats, video_id,
+        save_chats(os.path.join(d, f"{ALL_LOG}{suffix}.md"), chats, video_id,
                    None, opened, source, title)
-        save_chats(os.path.join(d, f"filtered_chats{suffix}.md"),
+        save_chats(os.path.join(d, f"{FILTERED_LOG}{suffix}.md"),
                    filtered, video_id, HIGHLIGHT_USERS, opened, source, title)
     print("저장 위치: " + ", ".join(dirs))
+
+
+def broadcast_key(opened):
+    """'2026-09-01 20:31:17' → '2031'. 같은 날 다른 방송을 파일명으로 가르는 값."""
+    return opened[11:13] + opened[14:16]
 
 
 def read_log_meta(path):
@@ -183,21 +208,22 @@ def log_suffix(directory, video_id, opened):
     시작 시각이 같으면 같은 방송이므로 접미사 없이 덮어쓴다. 라이브로 먼저 받아둔
     로그를 다시보기 로그가 그대로 대체하게 하려는 것이다.
     """
-    existing = read_log_meta(os.path.join(directory, "all_chats.md"))
+    existing = read_log_meta(os.path.join(directory, ALL_LOG + ".md"))
     if not existing:
         return ""
     if opened and existing.get("opened"):
         if existing["opened"] == opened:
             return ""
-        return "_" + opened[11:13] + opened[14:16]      # 다른 방송 - 시작 시각으로 구분
+        return "_" + broadcast_key(opened)     # 다른 방송 - 시작 시각으로 구분
     # 시작 시각이 없는 예전 로그는 종전대로 영상 번호로 판단한다
     logged = existing.get("video")
     return f"_{video_id}" if logged is not None and logged != str(video_id) else ""
 
 
 def get_obsidian_vault_path():
-    default_path = os.path.expanduser("~/Documents/Obsidian Vault")
-    return default_path if os.path.isdir(default_path) else None
+    """옵시디언 볼트 경로. config.json의 obsidian_vault로 바꿀 수 있다."""
+    path = os.path.expanduser(CONFIG.get("obsidian_vault") or DEFAULT_VAULT)
+    return path if os.path.isdir(path) else None
 
 
 def output_dirs(live_open_date):
@@ -219,8 +245,7 @@ def process_video(video_id, live_open_date=None, opened=None, source="vod"):
     chats = fetch_chats(video_id)
     if chats is None:
         return
-    # 봇과 프로필 없는(후원·시스템성) 레코드는 로그 대상이 아님
-    chats = [c for c in chats if c.get("profile") and c.get("userIdHash") not in BOT_USERS]
+    chats = [c for c in chats if is_loggable(c.get("profile"), c.get("userIdHash"))]
     write_chat_logs(chats, video_id, live_open_date, opened, source)
     return True
 
@@ -386,7 +411,7 @@ class ChatCollector(threading.Thread):
         return (data.get("content") or {}).get("accessToken")
 
     def _server_url(self):
-        index = (int(hashlib.md5(self.chat_channel_id.encode()).hexdigest(), 16) % 9) + 1
+        index = (int(hashlib.md5(self.chat_channel_id.encode()).hexdigest(), 16) % WS_SERVERS) + 1
         return f"wss://kr-ss{index}.chat.naver.com/chat"
 
     def run(self):
@@ -406,16 +431,16 @@ class ChatCollector(threading.Thread):
         ws = WebSocket(self._server_url(), timeout=CHAT_IDLE_LIMIT)
         try:
             ws.send_json({
-                "ver": "3", "svcid": "game", "cid": self.chat_channel_id,
-                "cmd": 100, "tid": 1,
-                "bdy": {"uid": None, "devType": 2001, "accTkn": token, "auth": "READ"},
+                "ver": WS_VERSION, "svcid": WS_SERVICE, "cid": self.chat_channel_id,
+                "cmd": CMD_CONNECT, "tid": 1,
+                "bdy": {"uid": None, "devType": WS_DEVICE, "accTkn": token, "auth": "READ"},
             })
             while not self._stop.is_set():
                 message = ws.recv_json()
                 command = message.get("cmd")
-                if command == 0:                      # 서버 ping - 응답하지 않으면 끊긴다
-                    ws.send_json({"ver": "3", "svcid": "game", "cmd": 10000})
-                elif command == 93101:                # 일반 채팅
+                if command == CMD_PING:               # 응답하지 않으면 끊긴다
+                    ws.send_json({"ver": WS_VERSION, "svcid": WS_SERVICE, "cmd": CMD_PONG})
+                elif command == CMD_CHAT:
                     self._store(message.get("bdy") or [])
         finally:
             ws.close()
@@ -423,7 +448,7 @@ class ChatCollector(threading.Thread):
     def _store(self, records):
         fresh = []
         for record in records:
-            if not record.get("profile") or record.get("uid") in BOT_USERS:
+            if not is_loggable(record.get("profile"), record.get("uid")):
                 continue
             fresh.append({
                 "profile": record["profile"],

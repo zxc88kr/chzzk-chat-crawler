@@ -30,6 +30,9 @@ POLL_BASE = "https://api.chzzk.naver.com/polling/v2"
 
 # 라이브 녹화용
 POLL_SEC = 30             # 방송 시작 감지 주기
+FFMPEG_BASE = ["ffmpeg", "-hide_banner", "-loglevel", "error"]
+YTDLP_CONNECTIONS = 8     # yt-dlp 병렬 조각 수
+
 LIVE_GB_PER_HOUR = 4      # 라이브 1시간당 요구 공간 (1080p60 실측 3.81GB + 변환 여유)
 DISK_FLOOR_GB = 5         # 녹화 도중 여유 공간이 이 아래로 내려가면 스스로 멈춘다
 
@@ -91,6 +94,10 @@ def update_timestamp_note(meta, replaces=None):
     print(f"타임스탬프 노트에 {action}: {meta['date']} / {meta['title']}")
 
 
+def free_disk_gb(path):
+    return shutil.disk_usage(path).free / 1e9
+
+
 def output_paths(meta):
     name = f"{meta['date'][5:7]}{meta['date'][8:10]} {meta['title']}"
     video_dir = os.path.join(BASE_DIR, "videos")
@@ -109,11 +116,11 @@ def find_filtered_log(meta):
     log_dir = os.path.join(BASE_DIR, "logs", meta["date"])
     opened = meta.get("opened")
 
-    candidates = [os.path.join(log_dir, "filtered_chats.md")]
+    candidates = [os.path.join(log_dir, f"{chat.FILTERED_LOG}.md")]
     if opened:
-        candidates.append(os.path.join(log_dir,
-                                       f"filtered_chats_{opened[11:13]}{opened[14:16]}.md"))
-    candidates.append(os.path.join(log_dir, f"filtered_chats_{meta['video_id']}.md"))
+        candidates.append(os.path.join(
+            log_dir, f"{chat.FILTERED_LOG}_{chat.broadcast_key(opened)}.md"))
+    candidates.append(os.path.join(log_dir, f"{chat.FILTERED_LOG}_{meta['video_id']}.md"))
 
     for path in candidates:
         if not os.path.exists(path):
@@ -130,12 +137,11 @@ def find_filtered_log(meta):
 
 
 def find_live_leftovers(meta):
-    """이 방송을 라이브로 먼저 받아둔 흔적이 있으면 그 결과물 경로를 돌려준다."""
     opened = meta.get("opened")
     if not opened:
         return None
     log_dir = os.path.join(BASE_DIR, "logs", meta["date"])
-    for path in sorted(glob.glob(os.path.join(log_dir, "all_chats*.md"))):
+    for path in sorted(glob.glob(os.path.join(log_dir, f"{chat.ALL_LOG}*.md"))):
         info = chat.read_log_meta(path)
         if info.get("opened") != opened or info.get("source") != "live":
             continue
@@ -149,10 +155,7 @@ def find_live_leftovers(meta):
 
 
 def remove_live_leftovers(leftovers):
-    """다시보기로 갈아끼우면서 라이브가 만든 영상과 XML을 치운다.
-
-    채팅 로그는 같은 이름에 덮어써지므로 따로 지울 것이 없다.
-    """
+    """채팅 로그는 같은 이름에 덮어써지므로 영상과 XML만 지우면 된다."""
     removed = False
     for path in (leftovers["video"], leftovers["xml"]):
         if os.path.exists(path):
@@ -331,7 +334,7 @@ def download_video(meta, video_path):
     if os.path.exists(video_path):
         print(f"이미 다운로드된 영상입니다: {video_path}")
         return
-    free_gb = shutil.disk_usage(os.path.dirname(video_path)).free / 1e9
+    free_gb = free_disk_gb(os.path.dirname(video_path))
     need_gb = max(MIN_FREE_GB, meta["duration"] / 3600 * EST_GB_PER_HOUR)
     if free_gb < need_gb:
         print(f"디스크 여유 공간이 {free_gb:.0f}GB뿐이라 다운로드를 중단합니다 (이 방송 기준 {need_gb:.0f}GB 필요).")
@@ -339,7 +342,7 @@ def download_video(meta, video_path):
     template = os.path.splitext(video_path)[0].replace("%", "%%") + ".%(ext)s"
     try:
         result = subprocess.run([
-            "yt-dlp", "-N", "8", "--merge-output-format", "mp4", "-o", template,
+            "yt-dlp", "-N", str(YTDLP_CONNECTIONS), "--merge-output-format", "mp4", "-o", template,
             f"https://chzzk.naver.com/video/{meta['video_id']}",
         ])
     except FileNotFoundError:
@@ -440,7 +443,7 @@ def best_hls_url(detail):
 
 
 def enough_disk(target_dir):
-    free_gb = shutil.disk_usage(target_dir).free / 1e9
+    free_gb = free_disk_gb(target_dir)
     if free_gb < MIN_FREE_GB:
         print(f"디스크 여유 공간이 {free_gb:.0f}GB뿐이라 녹화를 시작하지 않습니다 "
               f"(최소 {MIN_FREE_GB}GB 필요).")
@@ -451,8 +454,7 @@ def enough_disk(target_dir):
 
 def start_recording(url, ts_path):
     """mpegts로 받는다. 정전이나 강제 종료로 중단돼도 그 시점까지는 재생된다."""
-    process = subprocess.Popen([
-        "ffmpeg", "-hide_banner", "-loglevel", "error",
+    process = subprocess.Popen(FFMPEG_BASE + [
         # ffmpeg 8의 extension_picky 기본값이 치지직 세그먼트(.m4v)를 거부한다
         "-extension_picky", "0",
         # 플레이리스트에 남아있는 앞부분까지 받는다. 기본값(-3)은 라이브 최전방에서
@@ -489,9 +491,8 @@ def media_duration(path):
 
 def remux(ts_path, mp4_path):
     """재인코딩 없이 컨테이너만 바꾼다 - 화질 손실이 없고 CPU도 거의 쓰지 않는다."""
-    result = subprocess.run([
-        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-        "-i", ts_path, "-c", "copy", "-movflags", "+faststart", mp4_path,
+    result = subprocess.run(FFMPEG_BASE + [
+        "-y", "-i", ts_path, "-c", "copy", "-movflags", "+faststart", mp4_path,
     ])
     if result.returncode != 0 or not os.path.exists(mp4_path):
         print(f"mp4 변환에 실패했습니다. 원본은 그대로 두었습니다: {ts_path}")
@@ -599,7 +600,7 @@ def record_broadcast(channel_id):
             time.sleep(POLL_SEC)
             # 공간이 바닥나면 ffmpeg가 깨지기 전에 우리가 먼저 멈춘다.
             # 여기까지 받아둔 분량은 살리는 편이 낫다.
-            if shutil.disk_usage(video_dir).free / 1e9 < DISK_FLOOR_GB:
+            if free_disk_gb(video_dir) < DISK_FLOOR_GB:
                 print(f"  디스크 여유가 {DISK_FLOOR_GB}GB 아래로 내려가 녹화를 마칩니다.")
                 break
             try:

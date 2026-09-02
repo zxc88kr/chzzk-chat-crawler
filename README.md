@@ -90,7 +90,7 @@ source: vod                      live 이면 아직 다시보기가 안 올라�
 | `premiere/{MMDD 제목}.xml` | 프리미어 마커 XML — Premiere에서 File > Import 하면 시퀀스와 마커가 생성됨 |
 | `logs/{YYYY-MM-DD}/` | 채팅 로그 (`all_chats.md`, `filtered_chats.md`) |
 
-옵시디언 기본 볼트(`~/Documents/Obsidian Vault`)가 있으면 채팅 로그는 `치지직/로그/{YYYY-MM-DD}/`, 타임스탬프 노트는 `치지직/타임스탬프.md`에도 함께 저장됩니다.
+옵시디언 볼트(기본값 `~/Documents/Obsidian Vault`, `config.json`에서 변경 가능)가 있으면 채팅 로그는 `치지직/로그/{YYYY-MM-DD}/`, 타임스탬프 노트는 `치지직/타임스탬프.md`에도 함께 저장됩니다.
 
 ## 설정 (config.json)
 
@@ -100,6 +100,7 @@ source: vod                      live 이면 아직 다시보기가 안 올라�
 | `bot_users` | 로그에서 제외할 봇 계정 ID 목록 |
 | `filter_messages` | 필터본에 남길 기준 문자 목록 |
 | `live_channel_id` | `live.sh`가 감시할 채널 ID (라이브 주소 끝의 32자리 해시) |
+| `obsidian_vault` | 옵시디언 볼트 경로. 비워두면 `~/Documents/Obsidian Vault`를 씁니다 |
 
 유저 ID는 `all_chats.md`의 닉네임 뒤 괄호 안 해시를 복사하면 됩니다. 처음 사용한다면 `highlight_users`를 본인 계정 ID로 바꿔주세요.
 

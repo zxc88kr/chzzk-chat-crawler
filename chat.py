@@ -1,8 +1,16 @@
+import base64
+import hashlib
 import json
 import os
 import re
+import socket
+import ssl
+import struct
 import sys
+import threading
+import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 API_BASE = "https://api.chzzk.naver.com/service"
@@ -13,6 +21,10 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # format_chat이 만드는 한 줄 포맷의 역파싱 정규식 - 포맷 변경 시 함께 수정
 CHAT_LINE = re.compile(r"^\[(\d+):(\d+):(\d+):(\d+)\] .+? \([0-9a-f]+\) - (.*)$")
+
+COMM_BASE = "https://comm-api.game.naver.com/nng_main/v1"
+CHAT_IDLE_LIMIT = 180     # 이 시간 동안 채팅 서버가 조용하면 끊긴 것으로 보고 재접속
+RECONNECT_WAIT = 5
 
 
 def load_config():
@@ -44,6 +56,12 @@ def get_json(url):
             return json.load(error)
         except ValueError:
             return {"code": error.code, "message": str(error)}
+
+
+def get_text(url):
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    with urllib.request.urlopen(request, timeout=15) as response:
+        return response.read().decode("utf-8", "replace")
 
 
 def fetch_video_content(video_id):
@@ -151,6 +169,217 @@ def process_video(video_id, live_open_date=None):
         save_chats(os.path.join(d, f"filtered_chats{suffix}.md"), filtered_chats, video_id, HIGHLIGHT_USERS)
     print("저장 위치: " + ", ".join(dirs))
     return True
+
+
+# ---------------------------------------------------------------- 라이브 채팅
+
+# 라이브 채팅은 WebSocket으로만 받을 수 있는데 표준 라이브러리에는 클라이언트가 없다.
+# RFC 6455 중 이 용도에 필요한 부분(텍스트 프레임 송수신, ping 응답, 종료)만 구현한다.
+# 확장(permessage-deflate)은 협상하지 않으므로 압축 프레임은 오지 않는다.
+
+OP_CONT, OP_TEXT, OP_BINARY = 0x0, 0x1, 0x2
+OP_CLOSE, OP_PING, OP_PONG = 0x8, 0x9, 0xA
+
+
+class WebSocketError(Exception):
+    pass
+
+
+class WebSocket:
+    def __init__(self, url, timeout=60):
+        parts = urllib.parse.urlsplit(url)
+        if parts.scheme != "wss":
+            raise WebSocketError(f"wss만 지원합니다: {url}")
+        host = parts.hostname
+        port = parts.port or 443
+        path = parts.path or "/"
+        if parts.query:
+            path += "?" + parts.query
+
+        raw = socket.create_connection((host, port), timeout=timeout)
+        self._sock = ssl.create_default_context().wrap_socket(raw, server_hostname=host)
+        self._sock.settimeout(timeout)
+        self._buf = b""
+        self._handshake(host, path)
+
+    def _handshake(self, host, path):
+        key = base64.b64encode(os.urandom(16)).decode()
+        request = (
+            f"GET {path} HTTP/1.1\r\n"
+            f"Host: {host}\r\n"
+            "Upgrade: websocket\r\n"
+            "Connection: Upgrade\r\n"
+            f"Sec-WebSocket-Key: {key}\r\n"
+            "Sec-WebSocket-Version: 13\r\n"
+            "Origin: https://chzzk.naver.com\r\n"
+            "\r\n"
+        )
+        self._sock.sendall(request.encode())
+        while b"\r\n\r\n" not in self._buf:
+            chunk = self._sock.recv(4096)
+            if not chunk:
+                raise WebSocketError("핸드셰이크 도중 연결이 끊겼습니다.")
+            self._buf += chunk
+        head, _, rest = self._buf.partition(b"\r\n\r\n")
+        self._buf = rest
+        status = head.split(b"\r\n", 1)[0].decode("latin-1")
+        if "101" not in status:
+            raise WebSocketError(f"업그레이드 실패: {status}")
+
+    def _read(self, n):
+        while len(self._buf) < n:
+            chunk = self._sock.recv(65536)
+            if not chunk:
+                raise WebSocketError("연결이 끊겼습니다.")
+            self._buf += chunk
+        data, self._buf = self._buf[:n], self._buf[n:]
+        return data
+
+    def _send_frame(self, opcode, payload=b""):
+        # 클라이언트가 보내는 프레임은 반드시 마스킹해야 한다 (RFC 6455 5.3)
+        header = bytearray([0x80 | opcode])
+        length = len(payload)
+        if length < 126:
+            header.append(0x80 | length)
+        elif length < 65536:
+            header.append(0x80 | 126)
+            header += struct.pack(">H", length)
+        else:
+            header.append(0x80 | 127)
+            header += struct.pack(">Q", length)
+        mask = os.urandom(4)
+        masked = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+        self._sock.sendall(bytes(header) + mask + masked)
+
+    def send_text(self, text):
+        self._send_frame(OP_TEXT, text.encode())
+
+    def recv_text(self):
+        """텍스트 메시지 하나를 돌려준다. ping은 내부에서 pong으로 응답하고 넘어간다."""
+        fragments = bytearray()
+        frag_opcode = None
+        while True:
+            b0, b1 = self._read(2)
+            fin, opcode = b0 & 0x80, b0 & 0x0F
+            length = b1 & 0x7F
+            if length == 126:
+                length = struct.unpack(">H", self._read(2))[0]
+            elif length == 127:
+                length = struct.unpack(">Q", self._read(8))[0]
+            payload = self._read(length) if length else b""
+
+            if opcode == OP_PING:
+                self._send_frame(OP_PONG, payload)
+                continue
+            if opcode == OP_PONG:
+                continue
+            if opcode == OP_CLOSE:
+                raise WebSocketError("서버가 연결을 종료했습니다.")
+            if opcode in (OP_TEXT, OP_BINARY):
+                frag_opcode = opcode
+                fragments = bytearray(payload)
+            elif opcode == OP_CONT:
+                fragments += payload
+            if fin:
+                if frag_opcode == OP_TEXT:
+                    return fragments.decode("utf-8", "replace")
+                fragments = bytearray()
+                frag_opcode = None
+
+    def send_json(self, obj):
+        self.send_text(json.dumps(obj, ensure_ascii=False))
+
+    def recv_json(self):
+        return json.loads(self.recv_text())
+
+    def close(self):
+        try:
+            self._send_frame(OP_CLOSE, struct.pack(">H", 1000))
+        except OSError:
+            pass
+        try:
+            self._sock.close()
+        except OSError:
+            pass
+
+
+class ChatCollector(threading.Thread):
+    """라이브 채팅을 절대 시각(epoch ms)으로 모아둔다.
+
+    영상 기준 몇 초 지점인지는 녹화가 끝난 뒤 실제 길이를 알아야 정확해지므로,
+    여기서는 변환하지 않고 원본 시각 그대로 쌓는다.
+    """
+
+    def __init__(self, chat_channel_id):
+        super().__init__(daemon=True)
+        self.chat_channel_id = chat_channel_id
+        self.messages = []
+        self._stop = threading.Event()
+        self._lock = threading.Lock()
+
+    def stop(self):
+        self._stop.set()
+
+    def collected(self):
+        with self._lock:
+            return list(self.messages)
+
+    def _access_token(self):
+        data = get_json(
+            f"{COMM_BASE}/chats/access-token"
+            f"?channelId={self.chat_channel_id}&chatType=STREAMING"
+        )
+        return (data.get("content") or {}).get("accessToken")
+
+    def _server_url(self):
+        index = (int(hashlib.md5(self.chat_channel_id.encode()).hexdigest(), 16) % 9) + 1
+        return f"wss://kr-ss{index}.chat.naver.com/chat"
+
+    def run(self):
+        while not self._stop.is_set():
+            try:
+                self._session()
+            except Exception as error:
+                if not self._stop.is_set():
+                    print(f"  채팅 연결이 끊겼습니다 ({error}). {RECONNECT_WAIT}초 후 재접속합니다.")
+            if not self._stop.is_set():
+                time.sleep(RECONNECT_WAIT)
+
+    def _session(self):
+        token = self._access_token()
+        if not token:
+            raise RuntimeError("채팅 토큰 발급 실패")
+        ws = WebSocket(self._server_url(), timeout=CHAT_IDLE_LIMIT)
+        try:
+            ws.send_json({
+                "ver": "3", "svcid": "game", "cid": self.chat_channel_id,
+                "cmd": 100, "tid": 1,
+                "bdy": {"uid": None, "devType": 2001, "accTkn": token, "auth": "READ"},
+            })
+            while not self._stop.is_set():
+                message = ws.recv_json()
+                command = message.get("cmd")
+                if command == 0:                      # 서버 ping - 응답하지 않으면 끊긴다
+                    ws.send_json({"ver": "3", "svcid": "game", "cmd": 10000})
+                elif command == 93101:                # 일반 채팅
+                    self._store(message.get("bdy") or [])
+        finally:
+            ws.close()
+
+    def _store(self, records):
+        fresh = []
+        for record in records:
+            if not record.get("profile") or record.get("uid") in BOT_USERS:
+                continue
+            fresh.append({
+                "profile": record["profile"],
+                "userIdHash": record.get("uid"),
+                "msgTime": record.get("msgTime"),
+                "content": record.get("msg") or "",
+            })
+        if fresh:
+            with self._lock:
+                self.messages.extend(fresh)
 
 
 def parse_video_id(user_input):

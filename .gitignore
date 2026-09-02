@@ -7,3 +7,4 @@ premiere/*
 .DS_Store
 __pycache__/
 .context/
+.live.lock

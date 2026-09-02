@@ -7,6 +7,7 @@ import signal
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.parse
 from xml.sax.saxutils import escape
 
@@ -441,24 +442,6 @@ def to_player_times(messages, anchor_epoch):
     return converted
 
 
-def save_live_chats(messages, live_id, live_date):
-    filtered = ([m for m in messages
-                 if any(word in m["content"] for word in chat.FILTER_MESSAGES)]
-                if chat.FILTER_MESSAGES else messages)
-    print(f"채팅 수: {len(messages)} (필터링: {len(filtered)})")
-
-    dirs = chat.output_dirs(live_date)
-    for directory in dirs:
-        os.makedirs(directory, exist_ok=True)
-        # 같은 날 다른 방송의 로그가 이미 있으면 파일명에 방송 ID를 붙여 구분
-        logged = chat.read_logged_video_id(os.path.join(directory, "all_chats.md"))
-        suffix = f"_{live_id}" if logged is not None and logged != str(live_id) else ""
-        chat.save_chats(os.path.join(directory, f"all_chats{suffix}.md"), messages, live_id)
-        chat.save_chats(os.path.join(directory, f"filtered_chats{suffix}.md"),
-                        filtered, live_id, chat.HIGHLIGHT_USERS)
-    print("저장 위치: " + ", ".join(dirs))
-
-
 def finalize(detail, ts_path, messages, ended_at):
     duration = media_duration(ts_path)
     if not duration:
@@ -483,7 +466,7 @@ def finalize(detail, ts_path, messages, ended_at):
     # 기준점은 끝에서 되짚어 잡는다 (to_player_times 설명 참고)
     converted = to_player_times(messages, ended_at - duration)
     if converted:
-        save_live_chats(converted, meta["video_id"], meta["date"])
+        chat.write_chat_logs(converted, meta["video_id"], meta["date"])
     else:
         print("수집된 채팅이 없어 로그 저장을 건너뜁니다.")
 
@@ -500,9 +483,10 @@ def finalize(detail, ts_path, messages, ended_at):
 
 
 def record_broadcast(channel_id):
+    """반환값: "done" 녹화 완료 / "skip" 받을 수 없음 / "stop" 사용자가 중단."""
     detail = fetch_live_detail(channel_id)
     if detail is None or detail.get("status") != "OPEN":
-        return
+        return "skip"
 
     url = best_hls_url(detail)
     if url is None:
@@ -510,12 +494,12 @@ def record_broadcast(channel_id):
             print("성인 설정 방송이라 로그인 없이는 받을 수 없습니다. 이 방송은 건너뜁니다.")
         else:
             print("재생 정보를 받지 못했습니다 (구독자 전용이거나 일시적 오류). 건너뜁니다.")
-        return
+        return "skip"
 
     video_dir = os.path.join(BASE_DIR, "videos")
     os.makedirs(video_dir, exist_ok=True)
     if not enough_disk(video_dir):
-        return
+        return "skip"
 
     ts_path = os.path.join(video_dir, f".live_{detail['liveId']}.ts")
     print(f"\n▶ 녹화 시작: {detail['liveTitle']} (liveId {detail['liveId']})")
@@ -525,6 +509,7 @@ def record_broadcast(channel_id):
     collector.start()
     process = start_recording(url, ts_path)
 
+    interrupted = False
     try:
         while process.poll() is None:
             time.sleep(POLL_SEC)
@@ -533,38 +518,53 @@ def record_broadcast(channel_id):
             if shutil.disk_usage(video_dir).free / 1e9 < DISK_FLOOR_GB:
                 print(f"  디스크 여유가 {DISK_FLOOR_GB}GB 아래로 내려가 녹화를 마칩니다.")
                 break
-            status = fetch_live_status(channel_id)
+            try:
+                status = fetch_live_status(channel_id)
+            except (urllib.error.URLError, TimeoutError, ConnectionError):
+                continue     # 상태 조회가 잠깐 실패해도 녹화는 계속한다
             if status and status.get("status") == "CLOSE":
                 print("  방송이 종료되어 녹화를 마칩니다.")
                 break
     except KeyboardInterrupt:
+        interrupted = True
         print("\n  중단 요청을 받아 녹화를 마칩니다.")
     finally:
-        ended_at = time.time()
+        # ffmpeg가 완전히 멈춘 뒤에 시각을 잰다. 먼저 재면 그 사이에 기록된 만큼
+        # 기준점이 앞당겨져 채팅 시각이 통째로 밀린다
         stop_recording(process)
+        ended_at = time.time()
         collector.stop()
 
     if not os.path.exists(ts_path):
         print("녹화된 파일이 없습니다.")
-        return
+        return "skip"
     # 방송 도중 제목이 바뀌는 경우가 있어 종료 시점 제목을 다시 확인한다
     final = fetch_live_detail(channel_id) or detail
     if final.get("liveId") == detail["liveId"] and final.get("liveTitle"):
         detail["liveTitle"] = final["liveTitle"]
     finalize(detail, ts_path, collector.collected(), ended_at)
+    return "stop" if interrupted else "done"
 
 
 def watch(channel_id, once=False):
     print(f"채널 {channel_id} 감시를 시작합니다 ({POLL_SEC}초 간격, 종료는 Ctrl+C)")
+    skipped = set()          # 받을 수 없다고 판단한 방송 - 매 주기마다 다시 시도하지 않는다
     while True:
-        status = fetch_live_status(channel_id)
-        if status is None:
-            print("상태 조회에 실패했습니다. 다음 주기에 다시 시도합니다.")
-        elif status.get("status") == "OPEN":
-            record_broadcast(channel_id)
-            if once:
-                return
-            print(f"\n다시 감시 상태로 돌아갑니다 ({POLL_SEC}초 간격)")
+        try:
+            status = fetch_live_status(channel_id)
+            if status is None:
+                print("상태 조회에 실패했습니다. 다음 주기에 다시 시도합니다.")
+            elif status.get("status") == "OPEN" and status.get("liveId") not in skipped:
+                result = record_broadcast(channel_id)
+                if result == "stop" or once:
+                    return
+                if result == "skip":
+                    skipped.add(status.get("liveId"))
+                else:
+                    print(f"\n다시 감시 상태로 돌아갑니다 ({POLL_SEC}초 간격)")
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
+            # 몇 시간씩 도는 프로그램이라 잠깐의 회선 장애로 죽으면 안 된다
+            print(f"네트워크 오류: {getattr(error, 'reason', error)}. 다음 주기에 다시 시도합니다.")
         time.sleep(POLL_SEC)
 
 
@@ -621,12 +621,14 @@ def live_main(args):
         sys.exit(f"이미 실행 중입니다 (PID {running_pid}). 중복 실행하면 녹화본이 깨집니다.\n"
                  f"  진행 상황 확인: ps -p {running_pid} -o pid,etime,command\n"
                  f"  종료하려면    : kill {running_pid}")
-    hold_awake()
+    awake = hold_awake()
     try:
         watch(channel_id, once=once)
     except KeyboardInterrupt:
         print("\n감시를 종료합니다.")
     finally:
+        if awake is not None and awake.poll() is None:
+            awake.terminate()
         lock.close()
 
 

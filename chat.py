@@ -121,6 +121,28 @@ def save_chats(path, chats, video_id, highlight_users=None):
             f.write(format_chat(chat, highlight_users) + "\n")
 
 
+def write_chat_logs(chats, video_id, live_open_date):
+    """전체본과 필터본을 로컬 logs/와 옵시디언 볼트에 저장한다.
+
+    다시보기 크롤링과 라이브 수집이 같은 형식을 쓰므로 저장 경로도 공유한다.
+    """
+    filtered = ([c for c in chats
+                 if any(m in (c.get("content") or "") for m in FILTER_MESSAGES)]
+                if FILTER_MESSAGES else chats)
+    print(f"채팅 수: {len(chats)} (필터링: {len(filtered)})")
+
+    dirs = output_dirs(live_open_date)
+    for d in dirs:
+        os.makedirs(d, exist_ok=True)
+        # 같은 날 다른 방송의 로그가 이미 있으면 파일명에 영상 ID를 붙여 구분
+        logged_id = read_logged_video_id(os.path.join(d, "all_chats.md"))
+        suffix = f"_{video_id}" if logged_id is not None and logged_id != str(video_id) else ""
+        save_chats(os.path.join(d, f"all_chats{suffix}.md"), chats, video_id)
+        save_chats(os.path.join(d, f"filtered_chats{suffix}.md"),
+                   filtered, video_id, HIGHLIGHT_USERS)
+    print("저장 위치: " + ", ".join(dirs))
+
+
 def read_logged_video_id(path):
     if not os.path.exists(path):
         return None
@@ -156,18 +178,7 @@ def process_video(video_id, live_open_date=None):
         return
     # 봇과 프로필 없는(후원·시스템성) 레코드는 로그 대상이 아님
     chats = [c for c in chats if c.get("profile") and c.get("userIdHash") not in BOT_USERS]
-    filtered_chats = [c for c in chats if any(m in (c.get("content") or "") for m in FILTER_MESSAGES)] if FILTER_MESSAGES else chats
-    print(f"채팅 수: {len(chats)} (필터링: {len(filtered_chats)})")
-
-    dirs = output_dirs(live_open_date)
-    for d in dirs:
-        os.makedirs(d, exist_ok=True)
-        # 같은 날 다른 방송의 로그가 이미 있으면 파일명에 영상 ID를 붙여 구분
-        logged_id = read_logged_video_id(os.path.join(d, "all_chats.md"))
-        suffix = f"_{video_id}" if logged_id is not None and logged_id != str(video_id) else ""
-        save_chats(os.path.join(d, f"all_chats{suffix}.md"), chats, video_id)
-        save_chats(os.path.join(d, f"filtered_chats{suffix}.md"), filtered_chats, video_id, HIGHLIGHT_USERS)
-    print("저장 위치: " + ", ".join(dirs))
+    write_chat_logs(chats, video_id, live_open_date)
     return True
 
 

@@ -198,10 +198,6 @@ def read_log_meta(path):
     return meta
 
 
-def read_logged_video_id(path):
-    return read_log_meta(path).get("video")
-
-
 def log_suffix(directory, video_id, opened):
     """같은 날 다른 방송의 로그를 덮어쓰지 않도록 붙일 접미사.
 

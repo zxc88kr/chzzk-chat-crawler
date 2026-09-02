@@ -654,15 +654,16 @@ def watch(channel_id, once=False):
 def hold_awake():
     """이 프로그램이 도는 동안 시스템 잠자기를 막는다.
 
-    방송을 기다리는 감시 구간에도 걸어야 한다. 유휴로 판단되어 맥이 잠들면 폴링이
-    멈춰서 방송이 켜져도 알아채지 못한다. -d는 넣지 않아 화면은 평소대로 꺼진다.
+    라이브는 방송을 기다리는 감시 구간에, 다시보기는 몇십 분씩 걸리는 다운로드
+    구간에 필요하다. 유휴로 판단되어 맥이 잠들면 폴링이 멈춰 방송을 놓치거나
+    받던 영상이 중단된다. -d는 넣지 않아 화면은 평소대로 꺼진다.
     프로그램이 끝나면 -w가 걸린 PID가 사라지므로 자동으로 풀린다.
     """
     try:
         return subprocess.Popen(
             ["caffeinate", "-i", "-m", "-s", "-w", str(os.getpid())])
     except FileNotFoundError:
-        print("caffeinate를 찾지 못했습니다. 자리를 비우면 맥이 잠들어 방송을 놓칠 수 있습니다.")
+        print("caffeinate를 찾지 못했습니다. 자리를 비우면 맥이 잠들어 작업이 끊길 수 있습니다.")
         return None
 
 
@@ -719,4 +720,6 @@ if __name__ == "__main__":
     if sys.argv[1:2] == ["live"]:
         live_main(sys.argv[2:])
     else:
+        # 대화형은 영상을 여러 편 이어받으므로 archive() 안이 아니라 여기서 한 번만 건다
+        hold_awake()
         chat.run_cli(archive, "다시보기 링크 또는 영상 ID를 입력하세요 (종료: q 또는 빈 입력): ")

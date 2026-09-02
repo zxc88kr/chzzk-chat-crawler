@@ -7,6 +7,7 @@
   <img src="https://img.shields.io/badge/Python-3-00FFA3?style=flat-square&logo=python&logoColor=white" alt="Python 3" />
   <img src="https://img.shields.io/badge/macOS-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS" />
   <img src="https://img.shields.io/badge/dependencies-none-555?style=flat-square" alt="No dependencies" />
+  <img src="https://img.shields.io/github/license/zxc88kr/chzzk-archiver?style=flat-square" alt="License" />
 </p>
 
 영상만 받아두면 나중에 어디가 재밌었는지 못 찾습니다. 링크 하나로 네 가지를 함께 만듭니다.
@@ -106,6 +107,10 @@ source: vod                      live 이면 아직 다시보기가 안 올라�
 영상과 채팅은 항상 같은 소스에서 온 것끼리만 짝지어 씁니다. 기준 시각이 달라 섞으면 마커가 밀립니다.
 
 </details>
+
+## License
+
+MIT © [zxc88kr](https://github.com/zxc88kr)
 
 ---
 

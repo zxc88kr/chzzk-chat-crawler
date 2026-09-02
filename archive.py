@@ -31,6 +31,7 @@ POLL_BASE = "https://api.chzzk.naver.com/polling/v2"
 POLL_SEC = 30             # 방송 시작 감지 주기
 LIVE_GB_PER_HOUR = 4      # 라이브 1시간당 요구 공간 (1080p60 실측 3.81GB + 변환 여유)
 DISK_FLOOR_GB = 5         # 녹화 도중 여유 공간이 이 아래로 내려가면 스스로 멈춘다
+LIVE_SUFFIX = " (라이브)"  # 다시보기 파일명과 겹치지 않게 붙이는 표식
 
 
 def fetch_metadata(video_id):
@@ -73,8 +74,8 @@ def update_timestamp_note(meta):
     print(f"타임스탬프 노트에 기록했습니다: {meta['date']} / {meta['title']}")
 
 
-def output_paths(meta):
-    name = f"{meta['date'][5:7]}{meta['date'][8:10]} {meta['title']}"
+def output_paths(meta, suffix=""):
+    name = f"{meta['date'][5:7]}{meta['date'][8:10]} {meta['title']}{suffix}"
     video_dir = os.path.join(BASE_DIR, "videos")
     xml_dir = os.path.join(BASE_DIR, "premiere")
     os.makedirs(video_dir, exist_ok=True)
@@ -456,7 +457,9 @@ def finalize(detail, ts_path, messages, ended_at):
         "date": detail["openDate"].split()[0],
         "duration": duration,
     }
-    video_path, xml_path = output_paths(meta)
+    # 다시보기와 파일명이 겹치면 archive()가 "이미 받았다"고 보고 다운로드를 건너뛴다.
+    # 라이브 녹화본은 다시보기가 올라오면 버리는 임시본이라 표식을 붙여 자리를 비켜준다
+    video_path, xml_path = output_paths(meta, LIVE_SUFFIX)
 
     print(f"\n=== {meta['date']} {meta['title']} ({meta['video_id']}) ===")
     print("[1/4] 타임스탬프 노트 기록")

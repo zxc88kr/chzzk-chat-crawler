@@ -541,10 +541,8 @@ def record_broadcast(channel_id):
     if not os.path.exists(ts_path):
         print("녹화된 파일이 없습니다.")
         return "skip"
-    # 방송 도중 제목이 바뀌는 경우가 있어 종료 시점 제목을 다시 확인한다
-    final = fetch_live_detail(channel_id) or detail
-    if final.get("liveId") == detail["liveId"] and final.get("liveTitle"):
-        detail["liveTitle"] = final["liveTitle"]
+    # 제목은 방송을 켤 때 붙인 것을 쓴다. 도중에 바뀌는 일이 잦은데, 특히 끝날 무렵
+    # "방종" 같은 말로 바꾸는 경우가 많아 종료 시점 제목을 쓰면 이름이 쓸모없어진다
     finalize(detail, ts_path, collector.collected(), ended_at)
     return "stop" if interrupted else "done"
 

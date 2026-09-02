@@ -377,8 +377,12 @@ def archive(user_input):
         # 오래된 로그가 남아 있어도 다른 방송의 채팅으로 마커를 만들지 않도록 건너뜀
         print("채팅 크롤링이 실패해 마커 XML 생성을 건너뜁니다.")
     print("[4/5] 라이브 녹화본 정리")
-    if leftovers:
+    if leftovers and crawled:
+        # 채팅 크롤링이 됐다는 건 이 다시보기가 실제로 살아있다는 뜻이다. 그때만 지운다.
+        # 크롤링이 실패했는데 지워버리면 대체물 없이 원본만 사라진다
         remove_live_leftovers(leftovers)
+    elif leftovers:
+        print("  채팅 크롤링이 실패해 라이브 녹화본을 그대로 둡니다.")
     else:
         print("  정리할 라이브 녹화본이 없습니다.")
     print("[5/5] 영상 다운로드")
